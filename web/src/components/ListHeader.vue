@@ -13,7 +13,7 @@ defineEmits<{ clearFilters: [] }>()
 // a select list opens in its own portal: clicking an option must not close the filter popover
 function keepOpenForSelect(e: Event) {
   const el = (e as CustomEvent<{ originalEvent: Event }>).detail?.originalEvent?.target as HTMLElement | undefined
-  if (el?.closest('[role="listbox"]')) e.preventDefault()
+  if (el?.closest('[role="listbox"], [data-slot="select-content"]')) e.preventDefault()
 }
 </script>
 
