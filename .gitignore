@@ -10,3 +10,4 @@ data/
 .DS_Store
 face-service/tests/data/
 backups/
+graphify-out
