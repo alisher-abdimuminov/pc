@@ -14,7 +14,8 @@ services:
         logging: *logging
         environment:
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-        # ports: !reset []          # reachable only from inside the compose network
+        ports:
+            - "5431:5432"
         volumes: # no test-database init script in production
             - pgdata:/var/lib/postgresql/data
         healthcheck:
