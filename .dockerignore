@@ -1,0 +1,9 @@
+**/node_modules
+web/dist
+**/.venv
+**/__pycache__
+data
+.git
+graphify-out
+.claude
+.env

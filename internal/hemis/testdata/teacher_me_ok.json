@@ -1,0 +1,12 @@
+{
+  "login": "t.karimov",
+  "employee_id": 41007,
+  "name": "KARIMOV TOSHPO'LAT ALI O'G'LI",
+  "firstname": "TOSHPO'LAT",
+  "surname": "KARIMOV",
+  "patronymic": "ALI O'G'LI",
+  "phone": "+998901112233",
+  "passport_number": "AA7654321",
+  "birth_date": "1985-03-12",
+  "picture_full": "http://hemis-mock:9000/uploads/face_b.jpg"
+}

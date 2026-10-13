@@ -1,0 +1,198 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  face-service:
+    build: ./face-service
+    image: pc-face-service:dev
+    environment:
+      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:?set FACE_SERVICE_TOKEN in .env}
+      FACE_MODEL: ${FACE_MODEL:-Facenet512}
+      FACE_DETECTOR: ${FACE_DETECTOR:-retinaface}
+      FACE_METRIC: ${FACE_METRIC:-cosine}
+      FACE_THRESHOLD: ${FACE_THRESHOLD:-}
+      FACE_CONCURRENCY: ${FACE_CONCURRENCY:-2}
+    volumes:
+      - deepface-weights:/root/.deepface
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,urllib.request as u;u.urlopen(u.Request('http://localhost:8001/health',headers={'X-Internal-Token':os.environ['FACE_SERVICE_TOKEN']}),timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # HEMIS OAuth for teachers (see .env.example); empty = disabled
+      HEMIS_IMAGE_HOSTS: ${HEMIS_IMAGE_HOSTS:-}
+      HEMIS_OAUTH_CLIENT_ID: ${HEMIS_OAUTH_CLIENT_ID:-}
+      HEMIS_OAUTH_CLIENT_SECRET: ${HEMIS_OAUTH_CLIENT_SECRET:-}
+      HEMIS_OAUTH_REDIRECT_URI: ${HEMIS_OAUTH_REDIRECT_URI:-}
+      HEMIS_TEACHER_AUTHORIZE_URL: ${HEMIS_TEACHER_AUTHORIZE_URL:-}
+      HEMIS_TEACHER_ACCESS_TOKEN_URL: ${HEMIS_TEACHER_ACCESS_TOKEN_URL:-}
+      HEMIS_TEACHER_RESOURCE_OWNER_URL: ${HEMIS_TEACHER_RESOURCE_OWNER_URL:-}
+      HEMIS_TEACHER_AUTO_CREATE: ${HEMIS_TEACHER_AUTO_CREATE:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      face-service:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/data/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  # Local stand-in for HEMIS (profile `hemis-mock`): set HEMIS_BASE_URL=http://hemis-mock:9000 in .env.
+  hemis-mock:
+    profiles: [hemis-mock]
+    image: python:3.11-slim
+    command: python /srv/server.py
+    # published for the browser: the teacher OAuth redirect lands on http://localhost:9000/oauth/authorize
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      GROUPS_TOKEN: ${HEMIS_GROUPS_TOKEN:-}
+      OAUTH_CLIENT_SECRET: ${HEMIS_OAUTH_CLIENT_SECRET:-}
+    volumes:
+      - ./internal/hemis/testdata/teacher_me_ok.json:/srv/teacher_me_ok.json:ro
+      - ./infra/hemis-mock/server.py:/srv/server.py:ro
+      - ./infra/hemis-mock/accounts.json:/srv/accounts.json:ro
+      - ./face-service/tests/data:/srv/uploads:ro
+
+  tools:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: infra/tools.Dockerfile
+    working_dir: /src
+    volumes:
+      - .:/src
+
+  go-test:
+    profiles: [test]
+    image: golang:1.26-alpine
+    working_dir: /src
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/app_test?sslmode=disable
+      FACE_SERVICE_URL: http://face-service:8001
+      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:?set FACE_SERVICE_TOKEN in .env}
+      APP_ENV: dev
+      COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    command: sh -c "mkdir -p web/dist && touch web/dist/.gitkeep && go vet ./... && go test -p 1 ./..."
+
+  # End-to-end against the REAL face-service (needs photos: face-service/tests/fetch_photos.sh).
+  go-e2e:
+    profiles: [e2e]
+    image: golang:1.26-alpine
+    working_dir: /src
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/app_test?sslmode=disable
+      FACE_SERVICE_URL: http://face-service:8001
+      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:?set FACE_SERVICE_TOKEN in .env}
+      E2E_FACE: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      face-service:
+        condition: service_healthy
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    command: sh -c "mkdir -p web/dist && touch web/dist/.gitkeep && go test -p 1 -count=1 -v -run E2ERealFaceService ./internal/http/"
+
+  # `make loadtest`: concurrent /verify calls against the running face-service (needs the sample photos
+  # from face-service/tests/fetch_photos.sh).
+  loadtest:
+    profiles: [loadtest]
+    image: pc-face-service:dev
+    entrypoint: []
+    command: python /srv/loadtest.py
+    environment:
+      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:?set FACE_SERVICE_TOKEN in .env}
+      FACE_SERVICE_URL: http://face-service:8001
+      FACE_TIMEOUT: ${FACE_TIMEOUT_SECONDS:-15}
+      LOAD_LEVELS: ${LOAD_LEVELS:-1,2,4,8,16,32}
+      LOAD_DATA: /data
+    volumes:
+      - ./infra/loadtest/loadtest.py:/srv/loadtest.py:ro
+      - ./face-service/tests/data:/data:ro
+    depends_on:
+      face-service:
+        condition: service_healthy
+
+  face-test:
+    profiles: [test]
+    image: pc-face-service:dev
+    working_dir: /srv
+    environment:
+      FACE_SERVICE_TOKEN: test-token
+    volumes:
+      - ./face-service/tests:/srv/tests
+    entrypoint: []
+    command: sh -c "uv sync --frozen --quiet && uv run pytest -q"
+
+  # Real-model tests (slow; needs weights and photos in face-service/tests/data).
+  face-test-model:
+    profiles: [test-model]
+    image: pc-face-service:dev
+    working_dir: /srv
+    environment:
+      FACE_SERVICE_TOKEN: test-token
+    volumes:
+      - ./face-service/tests:/srv/tests
+      - deepface-weights:/root/.deepface
+    entrypoint: []
+    command: sh -c "uv sync --frozen --quiet && uv run pytest -q -m model"
+
+  web-test:
+    profiles: [test]
+    build:
+      context: .
+      target: web-base
+    working_dir: /web
+    volumes:
+      - ./web:/web
+      - web-node-modules:/web/node_modules
+    command: sh -c "bun install --frozen-lockfile && bun run lint && bun run test && bun run build"
+
+volumes:
+  pgdata:
+  deepface-weights:
+  uploads:
+  gomod:
+  gobuild:
+  web-node-modules:

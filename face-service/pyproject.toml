@@ -1,0 +1,24 @@
+[project]
+name = "face-service"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "deepface>=0.0.102",
+    "fastapi>=0.143.0",
+    "python-multipart>=0.0.32",
+    "tf-keras>=2.21.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]
+# Real-model tests are slow and need the weights: run them with `-m model` (make test-face-model).
+addopts = "-m 'not model'"
+markers = ["model: loads the real DeepFace models (slow, needs weights and test photos)"]

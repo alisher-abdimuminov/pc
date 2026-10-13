@@ -1,0 +1,18 @@
+{
+  "930001": {
+    "password": "hemis-demo-1",
+    "profile": {
+      "id": 930001,
+      "first_name": "ALI", "second_name": "VALIYEV", "third_name": "KARIM O'G'LI",
+      "full_name": "VALIYEV ALI KARIM O'G'LI", "short_name": "Valiyev A.K.",
+      "image": "http://hemis-mock:9000/uploads/face_a1.jpg",
+      "birth_date": 1083801600, "phone": "+998901234567",
+      "passport_pin": "12345678901234", "passport_number": "AB1234567",
+      "gender": {"code": "11", "name": "Erkak"}, "paymentForm": {"code": "12", "name": "Davlat granti"},
+      "level": {"code": "12", "name": "1-kurs"}, "semester": {"code": "11", "name": "1-semestr"},
+      "avg_gpa": 3.75, "address": "Toshkent, Chilonzor",
+      "country": {"name": "O'zbekiston"}, "province": {"name": "Toshkent shahri"}, "district": {"name": "Chilonzor"},
+      "group": {"id": 778, "name": "101-guruh"}, "department": {"id": 55, "name": "Informatika fakulteti"}
+    }
+  }
+}

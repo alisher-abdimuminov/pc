@@ -1,0 +1,12 @@
+.env
+.env.example
+node_modules/
+web/dist/*
+!web/dist/.gitkeep
+.venv/
+__pycache__/
+data/
+*.log
+.DS_Store
+face-service/tests/data/
+backups/
