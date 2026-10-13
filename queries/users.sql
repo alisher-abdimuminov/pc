@@ -1,8 +1,11 @@
 -- name: CreateUser :one
 INSERT INTO users (username, password_hash, role, is_active, must_change_password,
-    first_name, second_name, third_name, full_name, short_name, phone, group_id, faculty_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    first_name, second_name, third_name, full_name, short_name, phone, group_id, faculty_id, permissions)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE(sqlc.narg('permissions')::text[], '{}'))
 RETURNING *;
+
+-- name: SetUserPermissions :one
+UPDATE users SET permissions = $2, updated_at = now() WHERE id = $1 RETURNING *;
 
 -- name: GetUser :one
 SELECT * FROM users WHERE id = $1;

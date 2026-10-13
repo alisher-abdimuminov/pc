@@ -73,12 +73,13 @@ export interface GroupInput {
 export interface User {
   id: string
   username: string
-  role: 'admin' | 'teacher' | 'student'
+  role: 'admin' | 'little' | 'teacher' | 'student'
   is_active: boolean
   must_change_password: boolean
   last_login_at: string | null
   hemis_login: string
   hemis_synced_at: string | null
+  permissions: string[]
   first_name: string
   second_name: string
   third_name: string
@@ -195,13 +196,14 @@ export const schedules = crud<Schedule, ScheduleInput>('schedules')
 export const users = {
   list: (q?: ListQuery) => api<Page<User>>(`${base}/users${qs(q)}`),
   get: (id: string) => api<User>(`${base}/users/${id}`),
-  create: (body: { username: string; role: string; full_name: string; hemis_login?: string }) =>
+  create: (body: { username: string; role: string; full_name: string; hemis_login?: string; permissions?: string[] }) =>
     api<{ user: User; password: string }>(`${base}/users`, send('POST', body)),
   update: (id: string, body: UserUpdate) => api<User>(`${base}/users/${id}`, send('PUT', body)),
   setActive: (id: string, active: boolean) =>
     api<User>(`${base}/users/${id}/${active ? 'activate' : 'deactivate'}`, send('POST')),
   regeneratePassword: (id: string) =>
     api<{ password: string }>(`${base}/users/${id}/regenerate-password`, send('POST')),
+  setPermissions: (id: string, permissions: string[]) => api<User>(`${base}/users/${id}/permissions`, send('PUT', { permissions })),
   sensitive: (id: string) => api<Sensitive>(`${base}/users/${id}/sensitive`),
   uploadPhoto: (id: string, file: File) => {
     const fd = new FormData()
@@ -245,3 +247,10 @@ export const audit = {
   list: (q?: ListQuery) => api<Page<AuditEntry>>(`${base}/audit${qs(q)}`),
   get: (id: string) => api<AuditEntry>(`${base}/audit/${id}`),
 }
+
+export interface PermissionInfo {
+  key: string
+  /** everything this permission depends on (granted together with it) */
+  requires: string[]
+}
+export const permissionCatalog = () => api<{ permissions: PermissionInfo[] }>(`${base}/permissions`).then((r) => r.permissions)

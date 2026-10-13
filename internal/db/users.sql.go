@@ -56,9 +56,9 @@ func (q *Queries) CountUsersByRole(ctx context.Context, role string) (int64, err
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash, role, is_active, must_change_password,
-    first_name, second_name, third_name, full_name, short_name, phone, group_id, faculty_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+    first_name, second_name, third_name, full_name, short_name, phone, group_id, faculty_id, permissions)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::text[], '{}'))
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type CreateUserParams struct {
@@ -75,6 +75,7 @@ type CreateUserParams struct {
 	Phone              string        `json:"phone"`
 	GroupID            uuid.NullUUID `json:"group_id"`
 	FacultyID          uuid.NullUUID `json:"faculty_id"`
+	Permissions        []string      `json:"permissions"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -92,6 +93,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Phone,
 		arg.GroupID,
 		arg.FacultyID,
+		arg.Permissions,
 	)
 	var i User
 	err := row.Scan(
@@ -132,12 +134,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at FROM users WHERE id = $1
+SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -181,12 +184,13 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
 
 const getUserByHemisLogin = `-- name: GetUserByHemisLogin :one
-SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at FROM users WHERE hemis_login = $1
+SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions FROM users WHERE hemis_login = $1
 `
 
 func (q *Queries) GetUserByHemisLogin(ctx context.Context, hemisLogin pgtype.Text) (User, error) {
@@ -230,12 +234,13 @@ func (q *Queries) GetUserByHemisLogin(ctx context.Context, hemisLogin pgtype.Tex
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
 
 const getUserByRoleHemisID = `-- name: GetUserByRoleHemisID :one
-SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at FROM users WHERE role = $1 AND hemis_id = $2
+SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions FROM users WHERE role = $1 AND hemis_id = $2
 `
 
 type GetUserByRoleHemisIDParams struct {
@@ -284,12 +289,13 @@ func (q *Queries) GetUserByRoleHemisID(ctx context.Context, arg GetUserByRoleHem
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at FROM users WHERE username = $1
+SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username pgtype.Text) (User, error) {
@@ -333,12 +339,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username pgtype.Text) (
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT u.id, u.username, u.password_hash, u.role, u.is_active, u.must_change_password, u.last_login_at, u.hemis_id, u.first_name, u.second_name, u.third_name, u.full_name, u.short_name, u.image, u.hemis_img_url, u.birth_date, u.phone, u.passport_pin, u.passport_number, u.gender, u.payment_form, u.level, u.semester, u.gpa, u.address, u.country, u.province, u.district, u.group_id, u.faculty_id, u.face_embedding, u.face_model, u.face_enrolled_at, u.created_at, u.updated_at, u.hemis_login, u.hemis_synced_at, g.name AS group_name, f.name AS faculty_name
+SELECT u.id, u.username, u.password_hash, u.role, u.is_active, u.must_change_password, u.last_login_at, u.hemis_id, u.first_name, u.second_name, u.third_name, u.full_name, u.short_name, u.image, u.hemis_img_url, u.birth_date, u.phone, u.passport_pin, u.passport_number, u.gender, u.payment_form, u.level, u.semester, u.gpa, u.address, u.country, u.province, u.district, u.group_id, u.faculty_id, u.face_embedding, u.face_model, u.face_enrolled_at, u.created_at, u.updated_at, u.hemis_login, u.hemis_synced_at, u.permissions, g.name AS group_name, f.name AS faculty_name
 FROM users u
 LEFT JOIN groups g ON g.id = u.group_id
 LEFT JOIN faculties f ON f.id = u.faculty_id
@@ -400,6 +407,7 @@ type ListUsersRow struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	HemisLogin         pgtype.Text        `json:"hemis_login"`
 	HemisSyncedAt      pgtype.Timestamptz `json:"hemis_synced_at"`
+	Permissions        []string           `json:"permissions"`
 	GroupName          pgtype.Text        `json:"group_name"`
 	FacultyName        pgtype.Text        `json:"faculty_name"`
 }
@@ -459,6 +467,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 			&i.UpdatedAt,
 			&i.HemisLogin,
 			&i.HemisSyncedAt,
+			&i.Permissions,
 			&i.GroupName,
 			&i.FacultyName,
 		); err != nil {
@@ -473,7 +482,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 }
 
 const setUserActive = `-- name: SetUserActive :one
-UPDATE users SET is_active = $2, updated_at = now() WHERE id = $1 RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+UPDATE users SET is_active = $2, updated_at = now() WHERE id = $1 RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type SetUserActiveParams struct {
@@ -522,6 +531,7 @@ func (q *Queries) SetUserActive(ctx context.Context, arg SetUserActiveParams) (U
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
@@ -570,6 +580,61 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 	return err
 }
 
+const setUserPermissions = `-- name: SetUserPermissions :one
+UPDATE users SET permissions = $2, updated_at = now() WHERE id = $1 RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
+`
+
+type SetUserPermissionsParams struct {
+	ID          uuid.UUID `json:"id"`
+	Permissions []string  `json:"permissions"`
+}
+
+func (q *Queries) SetUserPermissions(ctx context.Context, arg SetUserPermissionsParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserPermissions, arg.ID, arg.Permissions)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.Role,
+		&i.IsActive,
+		&i.MustChangePassword,
+		&i.LastLoginAt,
+		&i.HemisID,
+		&i.FirstName,
+		&i.SecondName,
+		&i.ThirdName,
+		&i.FullName,
+		&i.ShortName,
+		&i.Image,
+		&i.HemisImgUrl,
+		&i.BirthDate,
+		&i.Phone,
+		&i.PassportPin,
+		&i.PassportNumber,
+		&i.Gender,
+		&i.PaymentForm,
+		&i.Level,
+		&i.Semester,
+		&i.Gpa,
+		&i.Address,
+		&i.Country,
+		&i.Province,
+		&i.District,
+		&i.GroupID,
+		&i.FacultyID,
+		&i.FaceEmbedding,
+		&i.FaceModel,
+		&i.FaceEnrolledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HemisLogin,
+		&i.HemisSyncedAt,
+		&i.Permissions,
+	)
+	return i, err
+}
+
 const touchUserLogin = `-- name: TouchUserLogin :exec
 UPDATE users SET last_login_at = now() WHERE id = $1
 `
@@ -584,7 +649,7 @@ UPDATE users SET
     first_name = $2, second_name = $3, third_name = $4, full_name = $5, short_name = $6,
     phone = $7, group_id = $8, faculty_id = $9, updated_at = now()
 WHERE id = $1
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type UpdateUserProfileParams struct {
@@ -650,6 +715,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }

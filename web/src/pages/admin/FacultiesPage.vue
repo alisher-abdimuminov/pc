@@ -20,9 +20,11 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
 import { formatDate } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const qc = useQueryClient()
+const can = useCan()
 const { search, page, pageSize, query } = useListQuery('faculties', faculties.list)
 const rows = computed(() => query.data.value?.items ?? [])
 const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
@@ -87,11 +89,11 @@ const del = useMutation({
   <div>
     <ListHeader v-model:search="search" :title="uz.faculties.title" :total="query.data.value?.total">
       <template #actions>
-        <Button variant="outline" :disabled="sync.isPending.value" data-testid="sync-button" @click="sync.mutate()">
+        <Button v-if="can('faculties:create')" variant="outline" :disabled="sync.isPending.value" data-testid="sync-button" @click="sync.mutate()">
           <RefreshCw class="size-4" :class="sync.isPending.value && 'animate-spin'" aria-hidden="true" />
           {{ sync.isPending.value ? uz.faculties.syncing : uz.faculties.sync }}
         </Button>
-        <Button @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.faculties.new }}</Button>
+        <Button v-if="can('faculties:create')" @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.faculties.new }}</Button>
       </template>
     </ListHeader>
 
@@ -128,13 +130,13 @@ const del = useMutation({
             </TableCell>
             <TableCell class="text-muted-foreground whitespace-nowrap">{{ formatDate(f.created_at) }}</TableCell>
             <TableCell class="text-right">
-              <DropdownMenu>
+              <DropdownMenu v-if="can('faculties:update') || can('faculties:delete')">
                 <DropdownMenuTrigger as-child>
                   <Button variant="outline" size="icon" :aria-label="uz.common.actions" data-testid="row-menu"><EllipsisVertical class="size-4" aria-hidden="true" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem @select="openForm(f)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @select="(deleteError = ''), (toDelete = f)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('faculties:update')" @select="openForm(f)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('faculties:delete')" variant="destructive" @select="(deleteError = ''), (toDelete = f)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>

@@ -172,31 +172,33 @@ type UserDTO struct {
 	LastLoginAt        *time.Time `json:"last_login_at"`
 	HemisLogin         string     `json:"hemis_login"`
 	HemisSyncedAt      *time.Time `json:"hemis_synced_at"`
-	FirstName          string     `json:"first_name"`
-	SecondName         string     `json:"second_name"`
-	ThirdName          string     `json:"third_name"`
-	FullName           string     `json:"full_name"`
-	ShortName          string     `json:"short_name"`
-	Phone              string     `json:"phone"`
-	Gender             string     `json:"gender"`
-	BirthDate          string     `json:"birth_date"`
-	Level              string     `json:"level"`
-	Semester           string     `json:"semester"`
-	Address            string     `json:"address"`
-	HasPhoto           bool       `json:"has_photo"`
-	FaceEnrolled       bool       `json:"face_enrolled"`
-	GroupID            *uuid.UUID `json:"group_id"`
-	GroupName          *string    `json:"group_name"`
-	FacultyID          *uuid.UUID `json:"faculty_id"`
-	FacultyName        *string    `json:"faculty_name"`
-	CreatedAt          time.Time  `json:"created_at"`
+	// Permissions are the sections a "little" admin may use (empty for every other role).
+	Permissions  []string   `json:"permissions"`
+	FirstName    string     `json:"first_name"`
+	SecondName   string     `json:"second_name"`
+	ThirdName    string     `json:"third_name"`
+	FullName     string     `json:"full_name"`
+	ShortName    string     `json:"short_name"`
+	Phone        string     `json:"phone"`
+	Gender       string     `json:"gender"`
+	BirthDate    string     `json:"birth_date"`
+	Level        string     `json:"level"`
+	Semester     string     `json:"semester"`
+	Address      string     `json:"address"`
+	HasPhoto     bool       `json:"has_photo"`
+	FaceEnrolled bool       `json:"face_enrolled"`
+	GroupID      *uuid.UUID `json:"group_id"`
+	GroupName    *string    `json:"group_name"`
+	FacultyID    *uuid.UUID `json:"faculty_id"`
+	FacultyName  *string    `json:"faculty_name"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 func userDTO(u db.User, groupName, facultyName *string) UserDTO {
 	return UserDTO{
 		ID: u.ID, Username: u.Username.String, Role: u.Role, IsActive: u.IsActive,
 		MustChangePassword: u.MustChangePassword, LastLoginAt: tsPtr(u.LastLoginAt),
-		HemisLogin: u.HemisLogin.String, HemisSyncedAt: tsPtr(u.HemisSyncedAt),
+		HemisLogin: u.HemisLogin.String, HemisSyncedAt: tsPtr(u.HemisSyncedAt), Permissions: permsOrEmpty(u.Permissions),
 		FirstName: u.FirstName, SecondName: u.SecondName, ThirdName: u.ThirdName,
 		FullName: u.FullName, ShortName: u.ShortName, Phone: u.Phone, Gender: u.Gender,
 		BirthDate: u.BirthDate, Level: u.Level, Semester: u.Semester, Address: u.Address,
@@ -264,4 +266,11 @@ type AuditDTO struct {
 	IP            string          `json:"ip"`
 	UserAgent     string          `json:"user_agent"`
 	CreatedAt     time.Time       `json:"created_at"`
+}
+
+func permsOrEmpty(p []string) []string {
+	if p == nil {
+		return []string{}
+	}
+	return p
 }

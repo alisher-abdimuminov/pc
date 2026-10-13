@@ -17,7 +17,7 @@ INSERT INTO users (username, role, is_active, hemis_id, first_name, second_name,
     birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address,
     country, province, district, group_id, faculty_id)
 VALUES ($1, 'student', true, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type CreateHemisStudentParams struct {
@@ -109,6 +109,7 @@ func (q *Queries) CreateHemisStudent(ctx context.Context, arg CreateHemisStudent
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
@@ -117,7 +118,7 @@ const createHemisTeacher = `-- name: CreateHemisTeacher :one
 INSERT INTO users (role, is_active, hemis_login, hemis_id, first_name, second_name, third_name, full_name, short_name,
     birth_date, phone, passport_pin, passport_number, hemis_synced_at)
 VALUES ('teacher', true, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type CreateHemisTeacherParams struct {
@@ -187,6 +188,7 @@ func (q *Queries) CreateHemisTeacher(ctx context.Context, arg CreateHemisTeacher
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
@@ -220,7 +222,7 @@ UPDATE users SET
     hemis_synced_at = now(),
     updated_at      = now()
 WHERE id = $11
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type UpdateTeacherFromHemisParams struct {
@@ -291,6 +293,7 @@ func (q *Queries) UpdateTeacherFromHemis(ctx context.Context, arg UpdateTeacherF
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }
@@ -301,7 +304,7 @@ UPDATE users SET hemis_id = $2, first_name = $3, second_name = $4, third_name = 
     level = $14, semester = $15, gpa = $16, address = $17, country = $18, province = $19, district = $20,
     group_id = $21, faculty_id = $22, updated_at = now()
 WHERE id = $1
-RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at
+RETURNING id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions
 `
 
 type UpdateUserFromHemisParams struct {
@@ -393,6 +396,7 @@ func (q *Queries) UpdateUserFromHemis(ctx context.Context, arg UpdateUserFromHem
 		&i.UpdatedAt,
 		&i.HemisLogin,
 		&i.HemisSyncedAt,
+		&i.Permissions,
 	)
 	return i, err
 }

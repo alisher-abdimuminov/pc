@@ -8,6 +8,8 @@ import (
 
 	"pc/internal/apperr"
 	"pc/internal/http/httputil"
+	"pc/internal/http/middleware"
+	"pc/internal/permission"
 	"pc/internal/service"
 )
 
@@ -30,53 +32,104 @@ type Handler struct{ s Services }
 
 func New(s Services) *Handler { return &Handler{s: s} }
 
-// Register mounts all admin routes on g (already protected by auth + admin role).
+// Register mounts all admin routes on g (already protected by auth and the admin/little roles). Every route
+// is gated by a permission: admins hold all of them, a little admin only what it was granted. Account
+// security (creating staff, passwords, passport data, permissions) is admin-only.
 func (h *Handler) Register(g fiber.Router) {
-	g.Get("/dashboard", h.dashboard)
+	need := middleware.RequirePermission
+	adminOnly := middleware.RequireRole("admin")
 
-	g.Get("/faculties", h.listFaculties)
-	g.Post("/faculties", h.createFaculty)
-	g.Post("/faculties/sync", h.syncFaculties)
-	g.Get("/faculties/:id", h.getFaculty)
-	g.Put("/faculties/:id", h.updateFaculty)
-	g.Delete("/faculties/:id", h.deleteFaculty)
+	g.Get("/dashboard", need("dashboard:view"), h.dashboard)
 
-	g.Get("/groups", h.listGroups)
-	g.Post("/groups", h.createGroup)
-	g.Post("/groups/sync", h.syncGroups)
-	g.Get("/groups/:id", h.getGroup)
-	g.Put("/groups/:id", h.updateGroup)
-	g.Delete("/groups/:id", h.deleteGroup)
+	g.Get("/faculties", need("faculties:view"), h.listFaculties)
+	g.Post("/faculties", need("faculties:create"), h.createFaculty)
+	g.Post("/faculties/sync", need("faculties:create"), h.syncFaculties)
+	g.Get("/faculties/:id", need("faculties:view"), h.getFaculty)
+	g.Put("/faculties/:id", need("faculties:update"), h.updateFaculty)
+	g.Delete("/faculties/:id", need("faculties:delete"), h.deleteFaculty)
 
-	g.Get("/users", h.listUsers)
-	g.Post("/users", h.createUser)
-	g.Get("/users/:id", h.getUser)
-	g.Put("/users/:id", h.updateUser)
-	g.Post("/users/:id/activate", h.activateUser)
-	g.Post("/users/:id/deactivate", h.deactivateUser)
-	g.Post("/users/:id/regenerate-password", h.regeneratePassword)
-	g.Get("/users/:id/sensitive", h.userSensitive)
-	g.Put("/users/:id/photo", h.enrollPhoto)
+	g.Get("/groups", need("groups:view"), h.listGroups)
+	g.Post("/groups", need("groups:create"), h.createGroup)
+	g.Post("/groups/sync", need("groups:create"), h.syncGroups)
+	g.Get("/groups/:id", need("groups:view"), h.getGroup)
+	g.Put("/groups/:id", need("groups:update"), h.updateGroup)
+	g.Delete("/groups/:id", need("groups:delete"), h.deleteGroup)
 
-	g.Get("/locations", h.listLocations)
-	g.Post("/locations", h.createLocation)
-	g.Get("/locations/:id", h.getLocation)
-	g.Put("/locations/:id", h.updateLocation)
-	g.Delete("/locations/:id", h.deleteLocation)
+	g.Get("/users", need("users:view"), h.listUsers)
+	g.Post("/users", adminOnly, h.createUser)
+	g.Get("/users/:id", need("users:view"), h.getUser)
+	g.Put("/users/:id", need("users:update"), h.manageable, h.updateUser)
+	g.Post("/users/:id/activate", need("users:update"), h.manageable, h.activateUser)
+	g.Post("/users/:id/deactivate", need("users:update"), h.manageable, h.deactivateUser)
+	g.Put("/users/:id/photo", need("users:update"), h.manageable, h.enrollPhoto)
+	g.Post("/users/:id/regenerate-password", adminOnly, h.regeneratePassword)
+	g.Get("/users/:id/sensitive", adminOnly, h.userSensitive)
+	g.Put("/users/:id/permissions", adminOnly, h.setPermissions)
+	g.Get("/permissions", adminOnly, h.permissionCatalog)
 
-	g.Get("/schedules", h.listSchedules)
-	g.Post("/schedules", h.createSchedule)
-	g.Get("/schedules/:id", h.getSchedule)
-	g.Put("/schedules/:id", h.updateSchedule)
-	g.Delete("/schedules/:id", h.deleteSchedule)
+	g.Get("/locations", need("locations:view"), h.listLocations)
+	g.Post("/locations", need("locations:create"), h.createLocation)
+	g.Get("/locations/:id", need("locations:view"), h.getLocation)
+	g.Put("/locations/:id", need("locations:update"), h.updateLocation)
+	g.Delete("/locations/:id", need("locations:delete"), h.deleteLocation)
 
-	g.Get("/reports/attendance", h.report)
-	g.Get("/reports/attendance.xlsx", h.reportXLSX)
-	g.Get("/students/:id/attempts", h.studentAttempts)
-	g.Get("/attempts", h.listAttempts)
+	g.Get("/schedules", need("schedules:view"), h.listSchedules)
+	g.Post("/schedules", need("schedules:create"), h.createSchedule)
+	g.Get("/schedules/:id", need("schedules:view"), h.getSchedule)
+	g.Put("/schedules/:id", need("schedules:update"), h.updateSchedule)
+	g.Delete("/schedules/:id", need("schedules:delete"), h.deleteSchedule)
 
-	g.Get("/audit", h.listAudit)
-	g.Get("/audit/:id", h.getAudit)
+	g.Get("/reports/attendance", need("reports:view"), h.report)
+	g.Get("/reports/attendance.xlsx", need("reports:view"), h.reportXLSX)
+	g.Get("/students/:id/attempts", need("attempts:view"), h.studentAttempts)
+	g.Get("/attempts", need("attempts:view"), h.listAttempts)
+
+	g.Get("/audit", need("audit:view"), h.listAudit)
+	g.Get("/audit/:id", need("audit:view"), h.getAudit)
+}
+
+// manageable keeps a little admin away from staff accounts: they may change students only.
+func (h *Handler) manageable(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := h.s.Users.EnsureManageable(c.Context(), httputil.Actor(c), id); err != nil {
+		return err
+	}
+	return c.Next()
+}
+
+type permissionInfo struct {
+	Key      string   `json:"key"`
+	Requires []string `json:"requires"`
+}
+
+// permissionCatalog lists every grantable permission with what it depends on (for the admin form).
+func (h *Handler) permissionCatalog(c *fiber.Ctx) error {
+	out := make([]permissionInfo, 0, len(permission.Catalog))
+	for _, p := range permission.Catalog {
+		out = append(out, permissionInfo{Key: p, Requires: permission.Requires(p)})
+	}
+	return c.JSON(fiber.Map{"permissions": out})
+}
+
+func (h *Handler) setPermissions(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	var b struct {
+		Permissions []string `json:"permissions"`
+	}
+	if err := httputil.Body(c, &b); err != nil {
+		return err
+	}
+	u, err := h.s.Users.SetPermissions(c.Context(), httputil.Actor(c), id, b.Permissions)
+	if err != nil {
+		return err
+	}
+	return c.JSON(u)
 }
 
 func (h *Handler) dashboard(c *fiber.Ctx) error {
@@ -261,22 +314,24 @@ type createUserBody struct {
 	FullName string `json:"full_name"`
 	// HemisLogin (teachers only) links the account to the teacher's HEMIS account.
 	HemisLogin string `json:"hemis_login"`
+	// Permissions (little admins only) are the sections the account may use.
+	Permissions []string `json:"permissions"`
 }
 
-// createUser creates an admin or teacher; the generated password is returned once.
+// createUser creates an admin, little admin or teacher; the generated password is returned once.
 func (h *Handler) createUser(c *fiber.Ctx) error {
 	var b createUserBody
 	if err := httputil.Body(c, &b); err != nil {
 		return err
 	}
-	if b.Role != "admin" && b.Role != "teacher" {
-		return apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"role": "Faqat administrator yoki o'qituvchi yaratish mumkin"})
+	if b.Role != "admin" && b.Role != "little" && b.Role != "teacher" {
+		return apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"role": "Faqat administrator, kichik administrator yoki o'qituvchi yaratish mumkin"})
 	}
 	if b.FullName == "" {
 		return apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"full_name": "Majburiy maydon"})
 	}
 	u, password, err := h.s.Users.CreateUser(c.Context(), httputil.Actor(c), service.CreateUserInput{
-		Username: b.Username, Role: b.Role, FullName: b.FullName, MustChangePassword: true, HemisLogin: b.HemisLogin,
+		Username: b.Username, Role: b.Role, FullName: b.FullName, MustChangePassword: true, HemisLogin: b.HemisLogin, Permissions: b.Permissions,
 	})
 	if err != nil {
 		return err

@@ -15,7 +15,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import PermissionPicker from '@/components/PermissionPicker.vue'
 import { Input } from '@/components/ui/input'
+import { useCan, useIsAdmin } from '@/lib/permissions'
 import { ApiError } from '@/api/client'
 import { applyApiError, errorMessage } from '@/lib/form'
 import { formatDateTime } from '@/lib/format'
@@ -30,6 +32,10 @@ const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: () => grou
 const fOpts = computed(() => (facultyOptions.data.value?.items ?? []).map((f) => ({ value: f.id, label: f.name })))
 const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
 const isStudent = computed(() => user.value?.role === 'student')
+const can = useCan()
+const isAdmin = useIsAdmin()
+// a little admin changes students only (staff accounts and account security stay with admins)
+const canEdit = computed(() => can('users:update') && (isAdmin() || isStudent.value))
 
 // ---- edit form ----
 const formError = ref('')
@@ -51,6 +57,25 @@ const [groupId] = defineField('group_id')
 const [facultyId] = defineField('faculty_id')
 const [hemisLogin, hemisLoginAttrs] = defineField('hemis_login')
 const isTeacher = computed(() => user.value?.role === 'teacher')
+const isLittle = computed(() => user.value?.role === 'little')
+
+// ---- permissions of a little admin (admins only) ----
+const perms = ref<string[]>([])
+const permsSaved = ref(false)
+const permsError = ref('')
+watch(user, (u) => u && (perms.value = [...u.permissions]), { immediate: true })
+const savePerms = useMutation({
+  mutationFn: () => users.setPermissions(id, perms.value),
+  onMutate: () => {
+    permsSaved.value = false
+    permsError.value = ''
+  },
+  onSuccess: async () => {
+    permsSaved.value = true
+    await refresh()
+  },
+  onError: (e) => (permsError.value = errorMessage(e)),
+})
 watch(
   user,
   (u) => u && resetForm({ values: { full_name: u.full_name, phone: u.phone, group_id: u.group_id ?? '', faculty_id: u.faculty_id ?? '', hemis_login: u.hemis_login } }),
@@ -142,11 +167,11 @@ const reveal = useMutation({
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <Button v-if="user.username" variant="outline" :disabled="regen.isPending.value" @click="regen.mutate()">{{ uz.users.regenerate }}</Button>
+          <Button v-if="user.username && isAdmin()" variant="outline" :disabled="regen.isPending.value" @click="regen.mutate()">{{ uz.users.regenerate }}</Button>
           <label class="flex items-center gap-2 text-sm">
             <Switch
               :model-value="user.is_active"
-              :disabled="toggle.isPending.value"
+              :disabled="toggle.isPending.value || !canEdit"
               :aria-label="user.is_active ? uz.users.deactivate : uz.users.activate"
               @update:model-value="toggle.mutate($event)"
             />
@@ -161,6 +186,7 @@ const reveal = useMutation({
           <CardHeader><CardTitle>{{ uz.users.edit }}</CardTitle></CardHeader>
           <CardContent>
             <form class="space-y-4" novalidate @submit.prevent="onSubmit">
+              <fieldset :disabled="!canEdit" class="space-y-4">
               <FormField :label="uz.users.fullName" :error="errors.full_name" for="full_name">
                 <Input id="full_name" v-model="fullName" v-bind="fullNameAttrs" />
               </FormField>
@@ -179,14 +205,26 @@ const reveal = useMutation({
                   <SelectField id="faculty" v-model="facultyId" :options="fOpts" :placeholder="uz.common.none" />
                 </FormField>
               </template>
+              </fieldset>
               <p v-if="formError" class="text-destructive text-sm" role="alert">{{ formError }}</p>
               <p v-if="saved" class="flex items-center gap-1 text-sm text-emerald-600" role="status"><Check class="size-4" aria-hidden="true" />{{ uz.common.save }}</p>
-              <Button type="submit" :disabled="isSubmitting">{{ uz.common.save }}</Button>
+              <Button v-if="canEdit" type="submit" :disabled="isSubmitting">{{ uz.common.save }}</Button>
             </form>
           </CardContent>
         </Card>
 
         <div class="space-y-4">
+          <Card v-if="isLittle">
+            <CardHeader><CardTitle>{{ uz.permissions.title }}</CardTitle></CardHeader>
+            <CardContent class="space-y-3">
+              <PermissionPicker v-model="perms" :disabled="!isAdmin()" />
+              <template v-if="isAdmin()">
+                <p v-if="permsError" class="text-destructive text-sm" role="alert">{{ permsError }}</p>
+                <p v-if="permsSaved" class="text-sm text-emerald-600" role="status" data-testid="permissions-saved">{{ uz.permissions.saved }}</p>
+                <Button :disabled="savePerms.isPending.value" data-testid="save-permissions" @click="savePerms.mutate()">{{ uz.common.save }}</Button>
+              </template>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader><CardTitle>{{ uz.users.details }}</CardTitle></CardHeader>
             <CardContent>
@@ -206,7 +244,7 @@ const reveal = useMutation({
             </CardContent>
           </Card>
 
-          <Card v-if="isStudent">
+          <Card v-if="isStudent && canEdit">
             <CardHeader><CardTitle>{{ uz.users.photoTitle }}</CardTitle></CardHeader>
             <CardContent class="space-y-3 text-sm">
               <img
@@ -226,7 +264,7 @@ const reveal = useMutation({
             </CardContent>
           </Card>
 
-          <Card v-if="isStudent">
+          <Card v-if="isStudent && isAdmin()">
             <CardHeader><CardTitle>{{ uz.users.sensitiveTitle }}</CardTitle></CardHeader>
             <CardContent class="space-y-3 text-sm">
               <template v-if="sensitive">

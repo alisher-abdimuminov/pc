@@ -29,7 +29,7 @@ async function mountAt(path: string) {
   const pinia = createPinia()
   setActivePinia(pinia)
   useSessionStore().setUser({
-    id: '1', username: 'admin', role: 'admin', full_name: 'Ali Valiyev', must_change_password: false, group_id: null, faculty_id: null,
+    id: '1', username: 'admin', role: 'admin', full_name: 'Ali Valiyev', must_change_password: false, group_id: null, faculty_id: null, permissions: [],
   })
   const w = mount(RoleLayout, { props: { title: 'Administrator', links }, global: { plugins: [router, pinia] } })
   await flushPromises()

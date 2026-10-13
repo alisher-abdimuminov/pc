@@ -21,9 +21,11 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
 import { formatDate } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const qc = useQueryClient()
+const can = useCan()
 const facultyFilter = ref('')
 const extra = computed(() => ({ faculty_id: facultyFilter.value || undefined }))
 const { search, page, pageSize, query } = useListQuery('groups', groups.list, extra)
@@ -111,11 +113,11 @@ const del = useMutation({
         <SelectField v-model="facultyFilter" :options="fOpts" :placeholder="uz.groups.faculty" />
       </template>
       <template #actions>
-        <Button variant="outline" :disabled="sync.isPending.value" data-testid="sync-button" @click="sync.mutate()">
+        <Button v-if="can('groups:create')" variant="outline" :disabled="sync.isPending.value" data-testid="sync-button" @click="sync.mutate()">
           <RefreshCw class="size-4" :class="sync.isPending.value && 'animate-spin'" aria-hidden="true" />
           {{ sync.isPending.value ? uz.groups.syncing : uz.groups.sync }}
         </Button>
-        <Button @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.groups.new }}</Button>
+        <Button v-if="can('groups:create')" @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.groups.new }}</Button>
       </template>
     </ListHeader>
 
@@ -164,8 +166,8 @@ const del = useMutation({
                   <DropdownMenuItem as-child>
                     <RouterLink :to="`/admin/groups/${g.id}`"><Eye class="size-4" aria-hidden="true" />{{ uz.common.view }}</RouterLink>
                   </DropdownMenuItem>
-                  <DropdownMenuItem @select="openForm(g)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @select="(deleteError = ''), (toDelete = g)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('groups:update')" @select="openForm(g)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('groups:delete')" variant="destructive" @select="(deleteError = ''), (toDelete = g)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>

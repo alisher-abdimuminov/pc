@@ -181,3 +181,7 @@ Phases are done in order. Mark each task `[x]` when finished. Rules and model de
   - Done: `make backup` (pg_dump custom format + uploads tgz, verified, atomic, pruned after `BACKUP_KEEP_DAYS`) and `make restore` (needs `CONFIRM=yes`, can restore into another database name). Schedule it with cron on the host.
 - [x] **8.4** Load test: N concurrent attempts (face-service queueing on CPU), tune `FACE_CONCURRENCY` if needed.
   - Done: `make loadtest` (concurrent /verify). Result on a 12-core machine: ~1.4 attempts/s, `FACE_CONCURRENCY` 2 / 4 / 6 give the same throughput, so the default 2 stays. With 4 cores: ~0.45/s. See "Production" in CLAUDE.md.
+
+## Little admin role (extra)
+
+- [x] **role `little`**: a staff account that may use only the admin sections an admin granted (`users.permissions TEXT[]`, migration 00003). Permissions are `<section>:<action>` (view/create/update/delete) from `internal/permission`; granting an action also grants what its screens need (create implies view, a schedule form needs groups, locations and students). Enforced per route by `middleware.RequirePermission`. Admin-only, never grantable: creating accounts, regenerating passwords, passport data, editing permissions. A little admin with `users:update` can change students only. Created and edited by admins in Foydalanuvchilar (create dialog and the user page).

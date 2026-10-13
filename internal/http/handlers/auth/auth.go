@@ -38,10 +38,14 @@ type UserResponse struct {
 	MustChangePassword bool       `json:"must_change_password"`
 	GroupID            *uuid.UUID `json:"group_id"`
 	FacultyID          *uuid.UUID `json:"faculty_id"`
+	Permissions        []string   `json:"permissions"`
 }
 
 func toResponse(u db.User) UserResponse {
-	r := UserResponse{ID: u.ID, Username: u.Username.String, Role: u.Role, FullName: u.FullName, MustChangePassword: u.MustChangePassword}
+	r := UserResponse{ID: u.ID, Username: u.Username.String, Role: u.Role, FullName: u.FullName, MustChangePassword: u.MustChangePassword, Permissions: []string{}}
+	if u.Role == "little" && u.Permissions != nil {
+		r.Permissions = u.Permissions
+	}
 	if u.GroupID.Valid {
 		r.GroupID = &u.GroupID.UUID
 	}

@@ -16,6 +16,7 @@ import (
 	"pc/internal/audit"
 	"pc/internal/auth"
 	"pc/internal/db"
+	"pc/internal/permission"
 )
 
 type UserService struct {
@@ -32,7 +33,8 @@ type CreateUserInput struct {
 	MustChangePassword bool
 	GroupID            *uuid.UUID
 	FacultyID          *uuid.UUID
-	HemisLogin         string // optional: links the account to a HEMIS teacher
+	HemisLogin         string   // optional: links the account to a HEMIS teacher
+	Permissions        []string // "little" admins only: what they may use
 }
 
 // CreateUser creates a user and returns it together with the plain password (shown once).
@@ -44,9 +46,18 @@ func (s *UserService) CreateUser(ctx context.Context, actor Actor, in CreateUser
 		fields["username"] = "Majburiy maydon"
 	}
 	switch in.Role {
-	case "admin", "teacher", "student":
+	case "admin", "little", "teacher", "student":
 	default:
 		fields["role"] = "Noto'g'ri rol"
+	}
+	var perms []string
+	if in.Role == permission.RoleLittle {
+		var err error
+		if perms, err = permission.Normalize(in.Permissions); err != nil {
+			fields["permissions"] = "Noto'g'ri ruxsat"
+		}
+	} else if len(in.Permissions) > 0 {
+		fields["permissions"] = "Ruxsatlar faqat kichik administratorga beriladi"
 	}
 	if len(fields) > 0 {
 		return db.User{}, "", apperr.Validation("Ma'lumotlar noto'g'ri", fields)
@@ -75,6 +86,7 @@ func (s *UserService) CreateUser(ctx context.Context, actor Actor, in CreateUser
 			FullName:           in.FullName,
 			GroupID:            nullUUID(in.GroupID),
 			FacultyID:          nullUUID(in.FacultyID),
+			Permissions:        perms,
 		})
 		if err != nil {
 			return err
@@ -301,4 +313,46 @@ func (s *UserService) SetGeneratedPassword(ctx context.Context, actor Actor, id 
 			map[string]any{"password_regenerated": true, "must_change_password": mustChange}))
 	})
 	return plain, err
+}
+
+// SetPermissions replaces what a little admin may use. Only little admins carry permissions.
+func (s *UserService) SetPermissions(ctx context.Context, actor Actor, id uuid.UUID, requested []string) (UserDTO, error) {
+	perms, err := permission.Normalize(requested)
+	if err != nil {
+		return UserDTO{}, apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"permissions": "Noto'g'ri ruxsat"})
+	}
+	var out UserDTO
+	err = InTx(ctx, s.pool, func(tx pgx.Tx, q *db.Queries) error {
+		old, err := q.GetUser(ctx, id)
+		if err != nil {
+			return notFoundOr(err)
+		}
+		if old.Role != permission.RoleLittle {
+			return apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"permissions": "Ruxsatlar faqat kichik administratorga beriladi"})
+		}
+		u, err := q.SetUserPermissions(ctx, db.SetUserPermissionsParams{ID: id, Permissions: perms})
+		if err != nil {
+			return err
+		}
+		out = s.dto(ctx, q, u)
+		return audit.Write(ctx, tx, actor.entry(audit.ActionUpdate, "user", &id,
+			map[string]any{"permissions": permsOrEmpty(old.Permissions)}, map[string]any{"permissions": perms}))
+	})
+	return out, err
+}
+
+// EnsureManageable stops a little admin from touching staff accounts: they may manage students only.
+// Admins may manage anyone.
+func (s *UserService) EnsureManageable(ctx context.Context, actor Actor, id uuid.UUID) error {
+	if actor.Role != permission.RoleLittle {
+		return nil
+	}
+	u, err := db.New(s.pool).GetUser(ctx, id)
+	if err != nil {
+		return notFoundOr(err)
+	}
+	if u.Role != "student" {
+		return apperr.Forbidden()
+	}
+	return nil
 }

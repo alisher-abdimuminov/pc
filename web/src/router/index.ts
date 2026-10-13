@@ -7,6 +7,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean
     roles?: Role[]
+    permission?: string
   }
 }
 
@@ -15,25 +16,26 @@ const layoutRoute = (
   layout: () => Promise<unknown>,
   children: RouteRecordRaw[] = [],
   home: () => Promise<unknown> = () => import('@/pages/DashboardPage.vue'),
+  { roles = [role], homePermission }: { roles?: Role[]; homePermission?: string } = {},
 ) => ({
   path: `/${role}`,
   component: layout,
-  meta: { roles: [role] as Role[] },
-  children: [{ path: '', name: `${role}-home`, component: home }, ...children],
+  meta: { roles },
+  children: [{ path: '', name: `${role}-home`, component: home, meta: { permission: homePermission } }, ...children],
 })
 
 const adminChildren: RouteRecordRaw[] = [
-  { path: 'faculties', component: () => import('@/pages/admin/FacultiesPage.vue') },
-  { path: 'groups', component: () => import('@/pages/admin/GroupsPage.vue') },
-  { path: 'groups/:id', component: () => import('@/pages/admin/GroupDetailPage.vue') },
-  { path: 'users', component: () => import('@/pages/admin/UsersPage.vue') },
-  { path: 'users/:id', component: () => import('@/pages/admin/UserDetailPage.vue') },
-  { path: 'locations', component: () => import('@/pages/admin/LocationsPage.vue') },
-  { path: 'schedules', component: () => import('@/pages/admin/SchedulesPage.vue') },
-  { path: 'audit', component: () => import('@/pages/admin/AuditPage.vue') },
-  { path: 'attempts', component: () => import('@/pages/admin/AttemptsPage.vue') },
-  { path: 'reports', component: () => import('@/pages/admin/ReportsPage.vue') },
-  { path: 'students/:id/attempts', component: () => import('@/pages/admin/StudentAttemptsPage.vue') },
+  { path: 'faculties', meta: { permission: 'faculties:view' }, component: () => import('@/pages/admin/FacultiesPage.vue') },
+  { path: 'groups', meta: { permission: 'groups:view' }, component: () => import('@/pages/admin/GroupsPage.vue') },
+  { path: 'groups/:id', meta: { permission: 'groups:view' }, component: () => import('@/pages/admin/GroupDetailPage.vue') },
+  { path: 'users', meta: { permission: 'users:view' }, component: () => import('@/pages/admin/UsersPage.vue') },
+  { path: 'users/:id', meta: { permission: 'users:view' }, component: () => import('@/pages/admin/UserDetailPage.vue') },
+  { path: 'locations', meta: { permission: 'locations:view' }, component: () => import('@/pages/admin/LocationsPage.vue') },
+  { path: 'schedules', meta: { permission: 'schedules:view' }, component: () => import('@/pages/admin/SchedulesPage.vue') },
+  { path: 'audit', meta: { permission: 'audit:view' }, component: () => import('@/pages/admin/AuditPage.vue') },
+  { path: 'attempts', meta: { permission: 'attempts:view' }, component: () => import('@/pages/admin/AttemptsPage.vue') },
+  { path: 'reports', meta: { permission: 'reports:view' }, component: () => import('@/pages/admin/ReportsPage.vue') },
+  { path: 'students/:id/attempts', meta: { permission: 'attempts:view' }, component: () => import('@/pages/admin/StudentAttemptsPage.vue') },
 ]
 
 const studentChildren: RouteRecordRaw[] = [
@@ -54,8 +56,9 @@ export const router = createRouter({
   routes: [
     { path: '/', component: () => import('@/pages/NotFoundPage.vue') }, // always redirected by the guard
     { path: '/login', name: 'login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
+    { path: '/no-access', name: 'no-access', component: () => import('@/pages/NoAccessPage.vue') },
     { path: '/change-password', name: 'change-password', component: () => import('@/pages/ChangePasswordPage.vue') },
-    layoutRoute('admin', () => import('@/layouts/AdminLayout.vue'), adminChildren, () => import('@/pages/admin/AdminDashboardPage.vue')),
+    layoutRoute('admin', () => import('@/layouts/AdminLayout.vue'), adminChildren, () => import('@/pages/admin/AdminDashboardPage.vue'), { roles: ['admin', 'little'], homePermission: 'dashboard:view' }),
     layoutRoute('teacher', () => import('@/layouts/TeacherLayout.vue'), teacherChildren, () => import('@/pages/teacher/TeacherGroupsPage.vue')),
     layoutRoute('student', () => import('@/layouts/StudentLayout.vue'), studentChildren, () => import('@/pages/student/StudentHomePage.vue')),
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/pages/NotFoundPage.vue'), meta: { public: true } },

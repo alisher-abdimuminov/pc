@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export type Role = 'admin' | 'teacher' | 'student'
+export type Role = 'admin' | 'little' | 'teacher' | 'student'
 
 export interface CurrentUser {
   id: string
@@ -10,6 +10,8 @@ export interface CurrentUser {
   must_change_password: boolean
   group_id: string | null
   faculty_id: string | null
+  /** what a "little" admin may use; empty for everyone else (admins can do everything) */
+  permissions: string[]
 }
 
 const json = (body: unknown): RequestInit => ({

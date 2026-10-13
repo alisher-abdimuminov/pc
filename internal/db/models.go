@@ -177,4 +177,5 @@ type User struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	HemisLogin         pgtype.Text        `json:"hemis_login"`
 	HemisSyncedAt      pgtype.Timestamptz `json:"hemis_synced_at"`
+	Permissions        []string           `json:"permissions"`
 }

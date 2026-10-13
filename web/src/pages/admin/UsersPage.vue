@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { toTypedSchema } from '@vee-validate/zod'
-import { EllipsisVertical, KeyRound, Pencil, Plus, User } from '@lucide/vue'
+import { EllipsisVertical, KeyRound, Pencil, Plus, ShieldCheck, User } from '@lucide/vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useForm } from 'vee-validate'
 import { computed, ref } from 'vue'
@@ -17,7 +17,9 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import PermissionPicker from '@/components/PermissionPicker.vue'
 import { Input } from '@/components/ui/input'
+import { useCan, useIsAdmin } from '@/lib/permissions'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useListQuery } from '@/composables/useListQuery'
@@ -27,6 +29,10 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { uz } from '@/locales/uz'
 
 const qc = useQueryClient()
+const can = useCan()
+const isAdmin = useIsAdmin()
+// a little admin may change students only; staff accounts and passwords stay with admins
+const canManage = (u: { role: string }) => can('users:update') && (isAdmin() || u.role === 'student')
 const role = ref('')
 const facultyId = ref('')
 const groupId = ref('')
@@ -45,6 +51,7 @@ const fOpts = computed(() => (facultyOptions.data.value?.items ?? []).map((f) =>
 const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
 const roleOpts = [
   { value: 'admin', label: uz.roles.admin },
+  { value: 'little', label: uz.roles.little },
   { value: 'teacher', label: uz.roles.teacher },
   { value: 'student', label: uz.roles.student },
 ]
@@ -92,7 +99,7 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
     z.object({
       username: z.string().trim().min(1, uz.common.required),
       full_name: z.string().trim().min(1, uz.common.required),
-      role: z.enum(['admin', 'teacher']),
+      role: z.enum(['admin', 'little', 'teacher']),
       hemis_login: z.string().trim().optional(),
     }),
   ),
@@ -101,10 +108,12 @@ const [username, usernameAttrs] = defineField('username')
 const [fullName, fullNameAttrs] = defineField('full_name')
 const [newRole] = defineField('role')
 const [hemisLogin, hemisLoginAttrs] = defineField('hemis_login')
+const newPerms = ref<string[]>([])
 
 function openForm() {
   formError.value = ''
   resetForm({ values: { username: '', full_name: '', role: 'teacher', hemis_login: '' } })
+  newPerms.value = []
   formOpen.value = true
 }
 
@@ -113,7 +122,11 @@ const pwOpen = ref(false)
 const onSubmit = handleSubmit(async (v) => {
   formError.value = ''
   try {
-    const r = await users.create({ ...v, hemis_login: v.role === 'teacher' ? v.hemis_login || undefined : undefined })
+    const r = await users.create({
+      ...v,
+      hemis_login: v.role === 'teacher' ? v.hemis_login || undefined : undefined,
+      permissions: v.role === 'little' ? newPerms.value : undefined,
+    })
     created.value = { username: r.user.username, password: r.password }
     formOpen.value = false
     pwOpen.value = true
@@ -133,7 +146,7 @@ const onSubmit = handleSubmit(async (v) => {
         <SelectField v-model="groupId" :options="gOpts" :placeholder="uz.users.group" />
         <SelectField v-model="active" :options="activeOpts" :placeholder="uz.users.status" />
       </template>
-      <template #actions><Button @click="openForm"><Plus class="size-4" aria-hidden="true" />{{ uz.users.new }}</Button></template>
+      <template #actions><Button v-if="isAdmin()" @click="openForm"><Plus class="size-4" aria-hidden="true" />{{ uz.users.new }}</Button></template>
     </ListHeader>
 
     <p v-if="actionError" class="text-destructive pb-3 text-sm" role="alert">{{ actionError }}</p>
@@ -192,7 +205,7 @@ const onSubmit = handleSubmit(async (v) => {
             <TableCell>
               <Switch
                 :model-value="u.is_active"
-                :disabled="toggle.isPending.value"
+                :disabled="toggle.isPending.value || !canManage(u)"
                 :aria-label="u.is_active ? uz.users.deactivate : uz.users.activate"
                 data-testid="access-switch"
                 @update:model-value="toggle.mutate({ id: u.id, active: $event })"
@@ -207,10 +220,13 @@ const onSubmit = handleSubmit(async (v) => {
                   <DropdownMenuItem as-child>
                     <RouterLink :to="`/admin/users/${u.id}`"><User class="size-4" aria-hidden="true" />{{ uz.users.viewProfile }}</RouterLink>
                   </DropdownMenuItem>
-                  <DropdownMenuItem as-child>
+                  <DropdownMenuItem v-if="canManage(u)" as-child>
                     <RouterLink :to="`/admin/users/${u.id}`"><Pencil class="size-4" aria-hidden="true" />{{ uz.users.edit }}</RouterLink>
                   </DropdownMenuItem>
-                  <DropdownMenuItem v-if="u.username" @select="regen.mutate(u.id)"><KeyRound class="size-4" aria-hidden="true" />{{ uz.users.regenerate }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="u.role === 'little' && isAdmin()" as-child>
+                    <RouterLink :to="`/admin/users/${u.id}`" data-testid="edit-permissions"><ShieldCheck class="size-4" aria-hidden="true" />{{ uz.permissions.edit }}</RouterLink>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem v-if="u.username && isAdmin()" @select="regen.mutate(u.id)"><KeyRound class="size-4" aria-hidden="true" />{{ uz.users.regenerate }}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>
@@ -225,14 +241,14 @@ const onSubmit = handleSubmit(async (v) => {
     <ListFooter v-if="query.data.value" v-model:page="page" :page-size="pageSize" :total="query.data.value.total" :row-count="rows.length" />
 
     <Dialog v-model:open="formOpen">
-      <DialogContent>
+      <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{{ uz.users.new }}</DialogTitle>
           <DialogDescription>{{ uz.users.createdHint }}</DialogDescription>
         </DialogHeader>
         <form class="space-y-4" novalidate @submit.prevent="onSubmit">
           <FormField :label="uz.users.role" :error="errors.role" for="role">
-            <SelectField id="role" v-model="newRole" :options="roleOpts.slice(0, 2)" />
+            <SelectField id="role" v-model="newRole" :options="roleOpts.slice(0, 3)" />
           </FormField>
           <FormField :label="uz.users.username" :error="errors.username" for="username">
             <Input id="username" v-model="username" v-bind="usernameAttrs" autocapitalize="none" />
@@ -244,6 +260,10 @@ const onSubmit = handleSubmit(async (v) => {
             <Input id="hemis_login" v-model="hemisLogin" v-bind="hemisLoginAttrs" autocapitalize="none" />
             <p class="text-muted-foreground text-xs">{{ uz.users.hemisLoginHint }}</p>
           </FormField>
+          <div v-if="newRole === 'little'">
+            <p class="mb-2 text-sm font-medium">{{ uz.permissions.title }}</p>
+            <PermissionPicker v-model="newPerms" />
+          </div>
           <p v-if="formError" class="text-destructive text-sm" role="alert">{{ formError }}</p>
           <DialogFooter>
             <Button type="button" variant="outline" @click="formOpen = false">{{ uz.common.cancel }}</Button>

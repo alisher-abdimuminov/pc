@@ -13,6 +13,7 @@ import (
 
 	"pc/internal/apperr"
 	"pc/internal/db"
+	"pc/internal/permission"
 	"pc/internal/storage"
 )
 
@@ -89,7 +90,7 @@ func (s *FileService) Open(ctx context.Context, user db.User, kind string, id uu
 		if err != nil || o.Image == "" {
 			return nil, apperr.NotFound()
 		}
-		allowed := user.Role == "admin" // attempt details and selfies are for admins only
+		allowed := permission.Has(user, "attempts:view") // attempt details and selfies: admins, or little admins granted attempts
 		if !allowed {
 			return nil, apperr.NotFound()
 		}
@@ -100,7 +101,8 @@ func (s *FileService) Open(ctx context.Context, user db.User, kind string, id uu
 		if err != nil || owner.Image == "" {
 			return nil, apperr.NotFound()
 		}
-		allowed := user.Role == "admin" || user.ID == owner.ID
+		allowed := user.Role == "admin" || user.ID == owner.ID ||
+			permission.HasAny(user, "users:view", "attempts:view", "reports:view", "groups:view") // lists that show photos
 		if user.Role == "teacher" && owner.GroupID.Valid {
 			_, err := q.GetGroupForTeacher(ctx, db.GetGroupForTeacherParams{ID: owner.GroupID.UUID, TeacherID: uuid.NullUUID{UUID: user.ID, Valid: true}})
 			allowed = err == nil

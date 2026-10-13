@@ -4,8 +4,10 @@ import { computed, ref } from 'vue'
 import { groups } from '@/api/admin'
 import AttendanceReport from '@/components/AttendanceReport.vue'
 import SelectField from '@/components/SelectField.vue'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
+const can = useCan()
 const groupId = ref('')
 const options = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
 const gOpts = computed(() => (options.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
@@ -19,7 +21,7 @@ const gOpts = computed(() => (options.data.value?.items ?? []).map((g) => ({ val
       export-url="/api/admin/reports/attendance.xlsx"
       :query="{ group_id: groupId || undefined }"
       :cache-key="`admin-${groupId}`"
-      :student-link="(sid: string) => `/admin/students/${sid}/attempts`"
+      :student-link="can('attempts:view') ? (sid: string) => `/admin/students/${sid}/attempts` : undefined"
       show-group
     >
       <template #filters>

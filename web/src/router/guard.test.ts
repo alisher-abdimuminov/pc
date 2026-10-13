@@ -3,7 +3,7 @@ import type { CurrentUser, Role } from '@/api/auth'
 import { resolveRedirect } from './guard'
 
 const user = (role: Role, must = false): CurrentUser => ({
-  id: '1', username: 'u', role, full_name: 'U', must_change_password: must, group_id: null, faculty_id: null,
+  id: '1', username: 'u', role, full_name: 'U', must_change_password: must, group_id: null, faculty_id: null, permissions: [],
 })
 const route = (path: string, meta: { public?: boolean; roles?: Role[] } = {}) => ({ path, meta })
 
@@ -27,5 +27,41 @@ describe('resolveRedirect', () => {
   it('keeps users inside their role area', () => {
     expect(resolveRedirect(user('teacher'), route('/admin', { roles: ['admin'] }))).toBe('/teacher')
     expect(resolveRedirect(user('admin'), route('/admin', { roles: ['admin'] }))).toBeNull()
+  })
+})
+
+describe('little admin', () => {
+  const little = (permissions: string[]): CurrentUser => ({ ...user('little'), permissions })
+  const adminPage = (path: string, permission?: string) => ({ path, meta: { roles: ['admin', 'little'] as Role[], permission } })
+
+  it('works in the admin area', () => {
+    expect(resolveRedirect(little(['users:view']), route('/login'))).toBe('/admin')
+    expect(resolveRedirect(little(['users:view']), route('/teacher', { roles: ['teacher'] }))).toBe('/admin')
+  })
+
+  it('opens a page it was granted and bounces from one it was not to the first allowed section', () => {
+    const u = little(['groups:view', 'faculties:view'])
+    expect(resolveRedirect(u, adminPage('/admin/groups', 'groups:view'))).toBeNull()
+    expect(resolveRedirect(u, adminPage('/admin/audit', 'audit:view'))).toBe('/admin/faculties')
+    expect(resolveRedirect(u, adminPage('/admin', 'dashboard:view'))).toBe('/admin/faculties')
+  })
+
+  it('goes to the dashboard when that is granted', () => {
+    expect(resolveRedirect(little(['dashboard:view', 'audit:view']), adminPage('/admin/users', 'users:view'))).toBe('/admin')
+  })
+
+  it('lands on a no-access page when nothing was granted, without looping', () => {
+    const u = little([])
+    expect(resolveRedirect(u, adminPage('/admin', 'dashboard:view'))).toBe('/no-access')
+    expect(resolveRedirect(u, route('/login'))).toBe('/no-access')
+    expect(resolveRedirect(u, route('/no-access'))).toBeNull()
+  })
+
+  it('keeps no-access for those who have something', () => {
+    expect(resolveRedirect(little(['audit:view']), route('/no-access'))).toBe('/admin')
+  })
+
+  it('admins pass every permission check', () => {
+    expect(resolveRedirect(user('admin'), adminPage('/admin/audit', 'audit:view'))).toBeNull()
   })
 })

@@ -433,7 +433,8 @@ Unlike the Python code, the HEMIS photo is not re-downloaded if `hemis_img_url` 
 
 ## Roles and permissions
 
-- **admin**: everything. Only admins create teachers/admins and generate their passwords.
+- **admin**: everything. Only admins create teachers/admins/little admins and generate their passwords.
+- **little** (little admin): works in the admin panel but only in the sections granted to it (`users.permissions`, e.g. `locations:view`, `locations:create`, `schedules:view`). Granting an action also grants what it depends on (see `internal/permission`). Never available to it, whatever it holds: creating accounts, regenerating passwords, passport data, editing permissions, and touching admin/teacher/little accounts (it manages students only). Permissions are checked on every request from the database, so a change applies at once.
 - **teacher**: only groups where `groups.teacher_id = me`, their students, attendance, assignments and submissions. Requesting another group's ID returns `404` (not 403).
 - **student**: only their own schedule, own attendance, their group's assignments and their own submissions.
 - Permissions are always enforced on the backend. Hiding things in the frontend is only for convenience.

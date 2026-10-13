@@ -22,9 +22,11 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
 import { formatDate, parsePoints } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const qc = useQueryClient()
+const can = useCan()
 const { search, page, pageSize, query } = useListQuery('locations', locations.list)
 
 const formOpen = ref(false)
@@ -104,7 +106,7 @@ const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
 <template>
   <div>
     <ListHeader v-model:search="search" :title="uz.locations.title" :total="query.data.value?.total">
-      <template #actions><Button @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.locations.new }}</Button></template>
+      <template #actions><Button v-if="can('locations:create')" @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.locations.new }}</Button></template>
     </ListHeader>
 
     <div class="overflow-x-auto rounded-xl border">
@@ -146,8 +148,8 @@ const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem @select="viewing = l"><Map class="size-4" aria-hidden="true" />{{ uz.locations.viewMap }}</DropdownMenuItem>
-                  <DropdownMenuItem @select="openForm(l)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @select="(deleteError = ''), (toDelete = l)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('locations:update')" @select="openForm(l)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('locations:delete')" variant="destructive" @select="(deleteError = ''), (toDelete = l)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>

@@ -18,6 +18,7 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { errorMessage } from '@/lib/form'
 import { formatDateTime, formatTime } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const groupId = ref('')
@@ -60,6 +61,8 @@ function onRowClick(e: MouseEvent, a: AdminAttempt) {
 
 const num = (v: number | null, d = 2) => (v === null ? '—' : v.toFixed(d))
 const selected = ref<AdminAttempt | null>(null)
+
+const can = useCan()
 
 // ---- block the student (deactivate: ends their sessions) ----
 const qc = useQueryClient()
@@ -132,7 +135,8 @@ function select(a: AdminAttempt | null) {
                   <AvatarFallback>{{ initials(a.student_name || a.student_username) }}</AvatarFallback>
                 </Avatar>
                 <div class="min-w-0">
-                  <RouterLink :to="`/admin/users/${a.student_id}`" class="block truncate font-medium hover:underline">{{ a.student_name || a.student_username }}</RouterLink>
+                  <RouterLink v-if="can('users:view')" :to="`/admin/users/${a.student_id}`" class="block truncate font-medium hover:underline">{{ a.student_name || a.student_username }}</RouterLink>
+                  <p v-else class="truncate font-medium">{{ a.student_name || a.student_username }}</p>
                   <p class="text-muted-foreground truncate text-sm">{{ a.group_name ?? '—' }}</p>
                 </div>
               </div>
@@ -216,7 +220,7 @@ function select(a: AdminAttempt | null) {
           <p v-if="spoofed(selected)" class="text-destructive flex items-center gap-1.5 text-sm sm:col-span-2" data-testid="spoof-warning">
             <ShieldAlert class="size-4 shrink-0" aria-hidden="true" />{{ uz.attemptsPage.spoofSuspected }}
           </p>
-          <div class="space-y-2 sm:col-span-2" data-testid="block-section">
+          <div v-if="can('users:update')" class="space-y-2 sm:col-span-2" data-testid="block-section">
             <p v-if="isBlocked(selected)" class="text-muted-foreground flex items-center gap-1.5 text-sm" data-testid="blocked-note">
               <Ban class="size-4" aria-hidden="true" />{{ uz.attemptsPage.blocked }}
             </p>

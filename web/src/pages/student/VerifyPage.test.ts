@@ -143,7 +143,7 @@ describe('verify page with automatic capture', () => {
   it('logs the student out and shows the warning when the account was just blocked', async () => {
     api.attempt.mockResolvedValue(result({ success: false, face_verified: false, failures: ['face'], blocked: true, message: 'Hisobingiz faol emas. Tizim adminlariga murojaat qiling.' }))
     const { w, router, pinia } = await render()
-    useSessionStore(pinia).setUser({ id: '1', username: 's', role: 'student', full_name: 'S', must_change_password: false, group_id: null, faculty_id: null })
+    useSessionStore(pinia).setUser({ id: '1', username: 's', role: 'student', full_name: 'S', must_change_password: false, group_id: null, faculty_id: null, permissions: [] })
     capture!(new Blob(['x']))
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/login')

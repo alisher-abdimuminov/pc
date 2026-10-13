@@ -10,6 +10,7 @@ import (
 	"pc/internal/apperr"
 	"pc/internal/auth"
 	"pc/internal/db"
+	"pc/internal/permission"
 )
 
 const (
@@ -66,6 +67,20 @@ func RequireRole(roles ...string) fiber.Handler {
 			return apperr.Unauthorized()
 		}
 		if !slices.Contains(roles, u.Role) {
+			return apperr.Forbidden()
+		}
+		return c.Next()
+	}
+}
+
+// RequirePermission allows admins and little admins who were granted perm. Must run after RequireAuth.
+func RequirePermission(perm string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		u, ok := CurrentUser(c)
+		if !ok {
+			return apperr.Unauthorized()
+		}
+		if !permission.Has(u, perm) {
 			return apperr.Forbidden()
 		}
 		return c.Next()

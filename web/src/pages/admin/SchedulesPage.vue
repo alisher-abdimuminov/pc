@@ -22,9 +22,11 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
 import { todayTashkent } from '@/lib/period'
+import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const qc = useQueryClient()
+const can = useCan()
 const { search, page, pageSize, query } = useListQuery('schedules', schedules.list)
 
 const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
@@ -140,7 +142,7 @@ const del = useMutation({
 <template>
   <div>
     <ListHeader v-model:search="search" :title="uz.schedules.title" :total="query.data.value?.total">
-      <template #actions><Button @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.schedules.new }}</Button></template>
+      <template #actions><Button v-if="can('schedules:create')" @click="openForm(null)"><Plus class="size-4" aria-hidden="true" />{{ uz.schedules.new }}</Button></template>
     </ListHeader>
 
     <div class="overflow-x-auto rounded-xl border">
@@ -187,13 +189,13 @@ const del = useMutation({
             </TableCell>
             <TableCell><Badge variant="outline" :class="STATE[stateOf(s)].cls" data-testid="state-badge">{{ STATE[stateOf(s)].label }}</Badge></TableCell>
             <TableCell class="text-right">
-              <DropdownMenu>
+              <DropdownMenu v-if="can('schedules:update') || can('schedules:delete')">
                 <DropdownMenuTrigger as-child>
                   <Button variant="outline" size="icon" :aria-label="uz.common.actions" data-testid="row-menu"><EllipsisVertical class="size-4" aria-hidden="true" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem @select="openForm(s)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @select="(deleteError = ''), (toDelete = s)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('schedules:update')" @select="openForm(s)"><Pencil class="size-4" aria-hidden="true" />{{ uz.common.edit }}</DropdownMenuItem>
+                  <DropdownMenuItem v-if="can('schedules:delete')" variant="destructive" @select="(deleteError = ''), (toDelete = s)"><Trash2 class="size-4" aria-hidden="true" />{{ uz.common.delete }}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>

@@ -9,10 +9,9 @@ import {
   ComboboxItemIndicator,
   ComboboxPortal,
   ComboboxRoot,
-  ComboboxTrigger,
   ComboboxViewport,
 } from 'reka-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import { cn } from '@/lib/utils'
 import { uz } from '@/locales/uz'
 
@@ -34,6 +33,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const CLEAR = '__clear__' // an item value that stands for "nothing chosen"
 
 const open = ref(false)
+const trigger = useTemplateRef<HTMLButtonElement>('trigger')
 const term = ref('')
 
 const selected = computed(() => props.options.find((o) => o.value === props.modelValue))
@@ -45,6 +45,11 @@ const shown = computed(() => {
 
 function onChange(v: unknown) {
   emit('update:modelValue', v === CLEAR || v == null ? '' : String(v))
+}
+// the trigger toggles the list itself; a press on it must not also count as an outside click that closes it
+function onOutside(e: Event) {
+  const target = (e as CustomEvent<{ originalEvent?: Event }>).detail?.originalEvent?.target ?? e.target
+  if (target instanceof Node && trigger.value?.contains(target)) e.preventDefault()
 }
 function onOpen(v: boolean) {
   open.value = v
@@ -61,24 +66,27 @@ function onOpen(v: boolean) {
     @update:open="onOpen"
   >
     <ComboboxAnchor as-child>
-      <ComboboxTrigger as-child>
-        <button
-          :id="id"
-          type="button"
-          role="combobox"
-          data-slot="select-trigger"
-          :data-placeholder="selected ? undefined : ''"
-          :class="
-            cn(
-              'bg-input/50 border-transparent data-placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/30 aria-invalid:ring-destructive/20 aria-invalid:border-destructive flex h-9 w-full items-center justify-between gap-1.5 rounded-3xl border px-3 py-2 text-sm whitespace-nowrap transition-[color,box-shadow,background-color] outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
-              $attrs.class as string,
-            )
-          "
-        >
-          <span class="line-clamp-1 text-left">{{ selected?.label ?? placeholder ?? '' }}</span>
-          <ChevronDown class="text-muted-foreground size-4" aria-hidden="true" />
-        </button>
-      </ComboboxTrigger>
+      <button
+        :id="id"
+        ref="trigger"
+        type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        :aria-expanded="open"
+        data-slot="select-trigger"
+        :data-placeholder="selected ? undefined : ''"
+        :class="
+          cn(
+            'bg-input/50 border-transparent data-placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/30 aria-invalid:ring-destructive/20 aria-invalid:border-destructive flex h-9 w-full items-center justify-between gap-1.5 rounded-3xl border px-3 py-2 text-sm whitespace-nowrap transition-[color,box-shadow,background-color] outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+            $attrs.class as string,
+          )
+        "
+        @click="onOpen(!open)"
+        @keydown.down.prevent="onOpen(true)"
+      >
+        <span class="line-clamp-1 text-left">{{ selected?.label ?? placeholder ?? '' }}</span>
+        <ChevronDown class="text-muted-foreground size-4" aria-hidden="true" />
+      </button>
     </ComboboxAnchor>
 
     <ComboboxPortal>
@@ -87,6 +95,7 @@ function onOpen(v: boolean) {
         :side-offset="4"
         align="start"
         data-slot="select-content"
+        @pointer-down-outside="onOutside"
         class="bg-popover text-popover-foreground ring-foreground/5 dark:ring-foreground/10 z-50 w-(--reka-combobox-trigger-width) min-w-48 overflow-hidden rounded-3xl shadow-lg ring-1"
       >
         <div class="relative border-b p-2">

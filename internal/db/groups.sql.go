@@ -188,7 +188,7 @@ func (q *Queries) GetGroupForTeacher(ctx context.Context, arg GetGroupForTeacher
 }
 
 const listGroupStudents = `-- name: ListGroupStudents :many
-SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at FROM users WHERE group_id = $1 AND role = 'student' ORDER BY full_name
+SELECT id, username, password_hash, role, is_active, must_change_password, last_login_at, hemis_id, first_name, second_name, third_name, full_name, short_name, image, hemis_img_url, birth_date, phone, passport_pin, passport_number, gender, payment_form, level, semester, gpa, address, country, province, district, group_id, faculty_id, face_embedding, face_model, face_enrolled_at, created_at, updated_at, hemis_login, hemis_synced_at, permissions FROM users WHERE group_id = $1 AND role = 'student' ORDER BY full_name
 `
 
 func (q *Queries) ListGroupStudents(ctx context.Context, groupID uuid.NullUUID) ([]User, error) {
@@ -238,6 +238,7 @@ func (q *Queries) ListGroupStudents(ctx context.Context, groupID uuid.NullUUID) 
 			&i.UpdatedAt,
 			&i.HemisLogin,
 			&i.HemisSyncedAt,
+			&i.Permissions,
 		); err != nil {
 			return nil, err
 		}
