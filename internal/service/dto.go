@@ -76,6 +76,9 @@ func mapDBError(err error) error {
 			if pgErr.ConstraintName == "users_hemis_login_key" {
 				return fieldErr("hemis_login", "Bu HEMIS login boshqa foydalanuvchiga ulangan")
 			}
+			if pgErr.ConstraintName == "locations_name_key" {
+				return fieldErr("name", "Bu nomli joylashuv allaqachon mavjud")
+			}
 			return apperr.Validation("Bunday yozuv allaqachon mavjud", nil)
 		}
 	}
