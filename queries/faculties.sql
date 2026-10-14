@@ -10,6 +10,14 @@ WHERE sqlc.arg('search')::text = '' OR name ILIKE '%' || sqlc.arg('search') || '
 ORDER BY name
 LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
 
+-- name: ListFacultiesAdmin :many
+SELECT f.*,
+    (SELECT count(*) FROM users s WHERE s.faculty_id = f.id AND s.role = 'student')::bigint AS student_count
+FROM faculties f
+WHERE sqlc.arg('search')::text = '' OR f.name ILIKE '%' || sqlc.arg('search') || '%'
+ORDER BY f.name
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
+
 -- name: CountFaculties :one
 SELECT count(*) FROM faculties
 WHERE sqlc.arg('search')::text = '' OR name ILIKE '%' || sqlc.arg('search') || '%';

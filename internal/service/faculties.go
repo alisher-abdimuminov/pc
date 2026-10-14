@@ -30,7 +30,7 @@ func validateName(name string) (string, error) {
 func (s *FacultyService) List(ctx context.Context, p ListParams) (Page[FacultyDTO], error) {
 	p = p.Norm()
 	q := db.New(s.pool)
-	rows, err := q.ListFaculties(ctx, db.ListFacultiesParams{Search: p.Search, Lim: p.Limit(), Off: p.Offset()})
+	rows, err := q.ListFacultiesAdmin(ctx, db.ListFacultiesAdminParams{Search: p.Search, Lim: p.Limit(), Off: p.Offset()})
 	if err != nil {
 		return Page[FacultyDTO]{}, err
 	}
@@ -40,7 +40,8 @@ func (s *FacultyService) List(ctx context.Context, p ListParams) (Page[FacultyDT
 	}
 	items := make([]FacultyDTO, len(rows))
 	for i, r := range rows {
-		items[i] = facultyDTO(r)
+		items[i] = facultyDTO(db.Faculty{ID: r.ID, Name: r.Name, HemisID: r.HemisID, CreatedAt: r.CreatedAt})
+		items[i].StudentCount = r.StudentCount
 	}
 	return newPage(items, total, p), nil
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
-import { groups } from '@/api/admin'
+import { selectOptions } from '@/api/admin'
 import AttendanceReport from '@/components/AttendanceReport.vue'
 import SelectField from '@/components/SelectField.vue'
 import { useCan } from '@/lib/permissions'
@@ -9,8 +9,8 @@ import { uz } from '@/locales/uz'
 
 const can = useCan()
 const groupId = ref('')
-const options = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
-const gOpts = computed(() => (options.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
+const options = useQuery({ queryKey: ['group-options'], queryFn: selectOptions.groups })
+const gOpts = computed(() => (options.data.value ?? []).map((g) => ({ value: g.id, label: g.name })))
 </script>
 
 <template>
@@ -22,10 +22,12 @@ const gOpts = computed(() => (options.data.value?.items ?? []).map((g) => ({ val
       :query="{ group_id: groupId || undefined }"
       :cache-key="`admin-${groupId}`"
       :student-link="can('attempts:view') ? (sid: string) => `/admin/students/${sid}/attempts` : undefined"
+      :enabled="!!groupId"
+      :disabled-hint="uz.report.selectGroup"
       show-group
     >
       <template #filters>
-        <SelectField v-model="groupId" class="w-52" :options="gOpts" :placeholder="uz.report.allStudents" />
+        <SelectField v-model="groupId" class="w-52" :options="gOpts" :placeholder="uz.report.group" />
       </template>
     </AttendanceReport>
   </div>

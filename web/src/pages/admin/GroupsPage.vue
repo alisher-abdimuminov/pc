@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useForm } from 'vee-validate'
 import { computed, ref } from 'vue'
 import { z } from 'zod'
-import { faculties, groups, users, type Group, type SyncResult } from '@/api/admin'
+import { groups, selectOptions, users, type Group, type SyncResult } from '@/api/admin'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormField from '@/components/FormField.vue'
 import ListFooter from '@/components/ListFooter.vue'
@@ -20,7 +20,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
-import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
@@ -33,12 +32,12 @@ const { search, page, pageSize, query } = useListQuery('groups', groups.list, ex
 const rows = computed(() => query.data.value?.items ?? [])
 const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
 
-const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: () => faculties.list({ page_size: 100 }) })
+const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: selectOptions.faculties })
 const teacherOptions = useQuery({
   queryKey: ['teacher-options'],
   queryFn: () => users.list({ role: 'teacher', is_active: true, page_size: 100 }),
 })
-const fOpts = computed(() => (facultyOptions.data.value?.items ?? []).map((f) => ({ value: f.id, label: f.name })))
+const fOpts = computed(() => (facultyOptions.data.value ?? []).map((f) => ({ value: f.id, label: f.name })))
 const tOpts = computed(() => (teacherOptions.data.value?.items ?? []).map((t) => ({ value: t.id, label: t.full_name })))
 
 // ---- HEMIS sync ----
@@ -138,7 +137,7 @@ const del = useMutation({
             <TableHead>{{ uz.groups.name }}</TableHead>
             <TableHead>{{ uz.groups.faculty }}</TableHead>
             <TableHead>{{ uz.groups.teacher }}</TableHead>
-            <TableHead>{{ uz.users.addDate }}</TableHead>
+            <TableHead>{{ uz.groups.studentCount }}</TableHead>
             <TableHead class="text-right">{{ uz.common.actions }}</TableHead>
           </TableRow>
         </TableHeader>
@@ -150,13 +149,12 @@ const del = useMutation({
                 <div class="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full"><UsersRound class="size-4" aria-hidden="true" /></div>
                 <div class="min-w-0">
                   <RouterLink :to="`/admin/groups/${g.id}`" class="block truncate font-medium hover:underline">{{ g.name }}</RouterLink>
-                  <p class="text-muted-foreground text-sm">{{ g.student_count }} {{ uz.groups.studentsSuffix }}</p>
                 </div>
               </div>
             </TableCell>
             <TableCell>{{ g.faculty_name ?? '—' }}</TableCell>
             <TableCell>{{ g.teacher_name ?? '—' }}</TableCell>
-            <TableCell class="text-muted-foreground whitespace-nowrap">{{ formatDate(g.created_at) }}</TableCell>
+            <TableCell>{{ g.student_count }}</TableCell>
             <TableCell class="text-right">
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>

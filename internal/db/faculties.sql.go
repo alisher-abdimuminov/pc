@@ -141,6 +141,55 @@ func (q *Queries) ListFaculties(ctx context.Context, arg ListFacultiesParams) ([
 	return items, nil
 }
 
+const listFacultiesAdmin = `-- name: ListFacultiesAdmin :many
+SELECT f.id, f.name, f.hemis_id, f.created_at,
+    (SELECT count(*) FROM users s WHERE s.faculty_id = f.id AND s.role = 'student')::bigint AS student_count
+FROM faculties f
+WHERE $1::text = '' OR f.name ILIKE '%' || $1 || '%'
+ORDER BY f.name
+LIMIT $3 OFFSET $2
+`
+
+type ListFacultiesAdminParams struct {
+	Search string `json:"search"`
+	Off    int32  `json:"off"`
+	Lim    int32  `json:"lim"`
+}
+
+type ListFacultiesAdminRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Name         string             `json:"name"`
+	HemisID      pgtype.Int8        `json:"hemis_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	StudentCount int64              `json:"student_count"`
+}
+
+func (q *Queries) ListFacultiesAdmin(ctx context.Context, arg ListFacultiesAdminParams) ([]ListFacultiesAdminRow, error) {
+	rows, err := q.db.Query(ctx, listFacultiesAdmin, arg.Search, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFacultiesAdminRow
+	for rows.Next() {
+		var i ListFacultiesAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.HemisID,
+			&i.CreatedAt,
+			&i.StudentCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const renameFaculty = `-- name: RenameFaculty :exec
 UPDATE faculties SET name = $2 WHERE id = $1
 `

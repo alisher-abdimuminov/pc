@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useForm } from 'vee-validate'
 import { computed, ref } from 'vue'
 import { z } from 'zod'
-import { faculties, groups, users } from '@/api/admin'
+import { selectOptions, users } from '@/api/admin'
 import FormField from '@/components/FormField.vue'
 import ListFooter from '@/components/ListFooter.vue'
 import ListHeader from '@/components/ListHeader.vue'
@@ -45,10 +45,10 @@ const extra = computed(() => ({
 }))
 const { search, page, pageSize, query } = useListQuery('users', users.list, extra)
 
-const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: () => faculties.list({ page_size: 100 }) })
-const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
-const fOpts = computed(() => (facultyOptions.data.value?.items ?? []).map((f) => ({ value: f.id, label: f.name })))
-const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
+const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: selectOptions.faculties })
+const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: selectOptions.groups })
+const fOpts = computed(() => (facultyOptions.data.value ?? []).map((f) => ({ value: f.id, label: f.name })))
+const gOpts = computed(() => (groupOptions.data.value ?? []).map((g) => ({ value: g.id, label: g.name })))
 const roleOpts = [
   { value: 'admin', label: uz.roles.admin },
   { value: 'little', label: uz.roles.little },

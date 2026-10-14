@@ -67,6 +67,7 @@ const onSubmit = handleSubmit(async (values) => {
     <ThemeToggle class="absolute top-4 right-4" />
     <Card class="w-full">
       <CardHeader>
+        <img src="/logo.png" alt="" class="mx-auto mb-2 size-20 object-contain" />
         <CardTitle>{{ uz.login.title }}</CardTitle>
         <p class="text-muted-foreground text-sm">{{ uz.login.hint }}</p>
       </CardHeader>

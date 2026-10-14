@@ -6,8 +6,7 @@ import SchedulesPage from './SchedulesPage.vue'
 
 const api = vi.hoisted(() => ({
   schedules: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
-  groups: { list: vi.fn() },
-  locations: { list: vi.fn() },
+  selectOptions: { groups: vi.fn(), locations: vi.fn() },
   users: { list: vi.fn() },
 }))
 vi.mock('@/api/admin', () => api)
@@ -21,8 +20,8 @@ const page = (items: unknown[], total = items.length) => ({ items, total, page: 
 
 async function render(items: Schedule[], total = items.length) {
   api.schedules.list.mockResolvedValue(page(items, total))
-  api.groups.list.mockResolvedValue(page([]))
-  api.locations.list.mockResolvedValue(page([]))
+  api.selectOptions.groups.mockResolvedValue([])
+  api.selectOptions.locations.mockResolvedValue([])
   api.users.list.mockResolvedValue(page([]))
   const w = mount(SchedulesPage, {
     attachTo: document.body,

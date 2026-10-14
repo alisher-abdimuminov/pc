@@ -19,7 +19,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { applyApiError, errorMessage } from '@/lib/form'
-import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
@@ -112,7 +111,7 @@ const del = useMutation({
           <TableRow>
             <TableHead class="w-10"><Checkbox :model-value="allSelected" :aria-label="uz.users.selectAll" data-testid="select-all" @update:model-value="toggleAll" /></TableHead>
             <TableHead>{{ uz.faculties.name }}</TableHead>
-            <TableHead>{{ uz.users.addDate }}</TableHead>
+            <TableHead>{{ uz.groups.studentCount }}</TableHead>
             <TableHead class="text-right">{{ uz.common.actions }}</TableHead>
           </TableRow>
         </TableHeader>
@@ -128,7 +127,7 @@ const del = useMutation({
                 </div>
               </div>
             </TableCell>
-            <TableCell class="text-muted-foreground whitespace-nowrap">{{ formatDate(f.created_at) }}</TableCell>
+            <TableCell>{{ f.student_count }}</TableCell>
             <TableCell class="text-right">
               <DropdownMenu v-if="can('faculties:update') || can('faculties:delete')">
                 <DropdownMenuTrigger as-child>

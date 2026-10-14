@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http/httptest"
@@ -258,7 +259,11 @@ func TestReportRangeValidation(t *testing.T) {
 	if rep["from"] != ds(te.today()) || rep["to"] != ds(te.today()) {
 		t.Fatalf("default range: %v %v", rep["from"], rep["to"])
 	}
-	te.get("/api/admin/reports/attendance?from=2026-01-01&to=2026-03-01", te.admin, 422) // "all" is capped at 31 days
+	// the admin report is per group: group_id is required
+	te.get("/api/admin/reports/attendance", te.admin, 422)
+	te.get("/api/admin/reports/attendance.xlsx", te.admin, 422)
+	te.get("/api/admin/reports/attendance?group_id=bad", te.admin, 422)
+	te.get("/api/admin/reports/attendance?group_id="+te.groupA+"&from=2026-01-01&to=2026-12-31", te.admin, 422)
 }
 
 // ---- 3.5 Excel export ----
@@ -292,12 +297,12 @@ func TestReportExcelExportIsAudited(t *testing.T) {
 	if te.auditCount("export") != 1 {
 		t.Fatal("export not audited")
 	}
-	// admin "all students" export includes the group column
-	body = te.get("/api/admin/reports/attendance.xlsx?from="+today+"&to="+today, te.admin, 200)
+	// admin export of one group
+	body = te.get("/api/admin/reports/attendance.xlsx?group_id="+te.groupB+"&from="+today+"&to="+today, te.admin, 200)
 	f, _ = excelize.OpenReader(bytes.NewReader(body))
 	rows, _ = f.GetRows("Davomat")
 	h = headerRow(rows)
-	if h < 0 || len(rows) < h+4 || rows[h][2] != "Guruh" || rows[h+3][2] != "B-1" {
+	if h < 0 || len(rows) < h+2 || rows[h+1][1] != "beta1" {
 		t.Fatalf("admin export: %v", rows)
 	}
 	if te.auditCount("export") != 2 {
@@ -520,4 +525,26 @@ func TestGroupOverviewShowsTodayStatus(t *testing.T) {
 	if list[0].(map[string]any)["student_count"] != 2.0 {
 		t.Fatalf("list: %v", list)
 	}
+}
+
+// ---- select-box options: the whole list, id + name only ----
+
+func TestAdminOptionsAreUnpaginated(t *testing.T) {
+	te := newTeacherEnv(t)
+	ctx := context.Background()
+	for i := 0; i < 25; i++ { // more than the default page size
+		te.pool.Exec(ctx, `INSERT INTO groups (name) VALUES ($1)`, fmt.Sprintf("extra-%02d", i))
+	}
+	for _, kind := range []string{"faculties", "groups", "locations", "schedules"} {
+		te.get("/api/admin/options/"+kind, te.admin, 200)
+	}
+	rep := jsonMap(t, te.get("/api/admin/options/groups", te.admin, 200))
+	items := rep["items"].([]any)
+	if len(items) < 27 {
+		t.Fatalf("groups options: got %d, want all", len(items))
+	}
+	if first := items[0].(map[string]any); len(first) != 2 || first["id"] == nil || first["name"] == nil {
+		t.Fatalf("option shape: %v", first)
+	}
+	te.get("/api/admin/options/groups", te.cookieA, 403) // teachers have no admin routes
 }

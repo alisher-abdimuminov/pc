@@ -39,7 +39,7 @@ async function onLogout() {
   <Sidebar collapsible="icon" v-bind="$attrs">
     <SidebarHeader>
       <div class="flex items-center gap-2 px-2 py-1.5">
-        <div class="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold" aria-hidden="true">A</div>
+        <img src="/logo.png" alt="" class="size-8 shrink-0 rounded-lg object-contain" aria-hidden="true" />
         <div class="grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
           <span class="truncate text-sm font-semibold">{{ uz.appName }}</span>
           <span class="text-muted-foreground truncate text-xs">{{ title }}</span>

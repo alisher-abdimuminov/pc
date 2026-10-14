@@ -7,6 +7,7 @@ import GroupsPage from './GroupsPage.vue'
 const api = vi.hoisted(() => ({
   groups: { list: vi.fn(), sync: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
   faculties: { list: vi.fn() },
+  selectOptions: { faculties: vi.fn() },
   users: { list: vi.fn() },
 }))
 vi.mock('@/api/admin', () => api)
@@ -15,7 +16,7 @@ const page = (items: unknown[]) => ({ items, total: items.length, page: 1, page_
 
 async function render() {
   api.groups.list.mockResolvedValue(page([{ id: 'g1', name: '101-guruh', faculty_name: null, teacher_name: null, student_count: 0 }]))
-  api.faculties.list.mockResolvedValue(page([]))
+  api.selectOptions.faculties.mockResolvedValue([])
   api.users.list.mockResolvedValue(page([]))
   const w = mount(GroupsPage, {
     global: {
@@ -77,7 +78,7 @@ describe('groups page layout', () => {
       { id: 'g1', name: '101-guruh', faculty_name: 'Tillar', teacher_name: 'Ustoz Bir', student_count: 3, created_at: '2026-01-05T05:00:00Z' },
       { id: 'g2', name: '102-guruh', faculty_name: null, teacher_name: null, student_count: 0, created_at: '2026-01-05T05:00:00Z' },
     ], total: 40, page: 1, page_size: 20 })
-    api.faculties.list.mockResolvedValue(page([]))
+    api.selectOptions.faculties.mockResolvedValue([])
     api.users.list.mockResolvedValue(page([]))
     const w = mount(GroupsPage, {
       attachTo: document.body,
@@ -89,10 +90,10 @@ describe('groups page layout', () => {
     await flushPromises()
     expect(w.get('[data-testid="list-total"]').text()).toBe('40')
     const rows = w.findAll('[data-testid="group-row"]')
-    expect(rows[0]!.text()).toContain('3 ta talaba')
+    expect(rows[0]!.text()).toContain('3')
     expect(rows[0]!.text()).toContain('Tillar')
     expect(rows[0]!.text()).toContain('Ustoz Bir')
-    expect(rows[1]!.text()).toContain('0 ta talaba')
+    expect(rows[1]!.text()).toContain('0')
     expect(w.get('[data-testid="showing"]').text()).toBe("Ko'rsatilmoqda 1–2 / 40")
     await rows[0]!.get('[data-testid="row-menu"]').trigger('keydown', { key: 'Enter' }) // opens the menu from the keyboard
     await flushPromises()

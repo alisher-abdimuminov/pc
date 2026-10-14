@@ -7,7 +7,7 @@ import { useForm } from 'vee-validate'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { z } from 'zod'
-import { faculties, groups, users, type Sensitive } from '@/api/admin'
+import { selectOptions, users, type Sensitive } from '@/api/admin'
 import FormField from '@/components/FormField.vue'
 import SelectField from '@/components/SelectField.vue'
 import PasswordDialog from '@/components/PasswordDialog.vue'
@@ -27,10 +27,10 @@ const id = useRoute().params.id as string
 const qc = useQueryClient()
 const { data: user, isPending } = useQuery({ queryKey: ['user', id], queryFn: () => users.get(id) })
 
-const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: () => faculties.list({ page_size: 100 }) })
-const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
-const fOpts = computed(() => (facultyOptions.data.value?.items ?? []).map((f) => ({ value: f.id, label: f.name })))
-const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
+const facultyOptions = useQuery({ queryKey: ['faculty-options'], queryFn: selectOptions.faculties })
+const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: selectOptions.groups })
+const fOpts = computed(() => (facultyOptions.data.value ?? []).map((f) => ({ value: f.id, label: f.name })))
+const gOpts = computed(() => (groupOptions.data.value ?? []).map((g) => ({ value: g.id, label: g.name })))
 const isStudent = computed(() => user.value?.role === 'student')
 const can = useCan()
 const isAdmin = useIsAdmin()

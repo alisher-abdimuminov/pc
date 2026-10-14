@@ -154,6 +154,7 @@ func NewServer(d Deps) *fiber.App {
 		Groups:      service.NewGroupService(d.Pool),
 		Users:       service.NewUserService(d.Pool),
 		Locations:   service.NewLocationService(d.Pool),
+		Options:     service.NewOptionService(d.Pool),
 		Schedules:   service.NewScheduleService(d.Pool),
 		Audit:       service.NewAuditService(d.Pool, d.Cfg.Location),
 	}).Register(api.Group("/admin", requireAuth, middleware.RequireRole("admin", "little")))

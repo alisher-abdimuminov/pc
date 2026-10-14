@@ -151,3 +151,19 @@ describe('attendance report marks', () => {
     })
   })
 })
+
+describe('attendance report when disabled', () => {
+  it('shows the hint, makes no request and hides the export button', async () => {
+    const { fetchReport } = await import('@/api/reports')
+    vi.mocked(fetchReport).mockClear()
+    const w = mount(AttendanceReport, {
+      props: { url: '/api/x', exportUrl: '/api/x.xlsx', cacheKey: 'off', enabled: false, disabledHint: 'Guruhni tanlang' },
+      global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) }]] },
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="report-hint"]').text()).toBe('Guruhni tanlang')
+    expect(w.find('[data-testid="report-grid"]').exists()).toBe(false)
+    expect(w.find('a[download]').exists()).toBe(false)
+    expect(fetchReport).not.toHaveBeenCalled()
+  })
+})

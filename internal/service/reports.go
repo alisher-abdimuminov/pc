@@ -14,10 +14,7 @@ import (
 	"pc/internal/db"
 )
 
-const (
-	maxReportDays    = 93
-	maxReportDaysAll = 31
-)
+const maxReportDays = 93
 
 type ReportService struct {
 	pool *pgxpool.Pool
@@ -192,16 +189,9 @@ func (s *ReportService) GroupReport(ctx context.Context, teacherID *uuid.UUID, g
 	return s.Build(ctx, &groupID, nil, from, to, s.Today())
 }
 
-// AdminReport covers one group, or every active student when groupID is nil.
-func (s *ReportService) AdminReport(ctx context.Context, groupID *uuid.UUID, fromStr, toStr string) (Report, error) {
-	if groupID != nil {
-		return s.GroupReport(ctx, nil, *groupID, fromStr, toStr)
-	}
-	from, to, err := s.ParseRange(fromStr, toStr, maxReportDaysAll)
-	if err != nil {
-		return Report{}, err
-	}
-	return s.Build(ctx, nil, nil, from, to, s.Today())
+// AdminReport covers one group: a report over every student is deliberately not offered.
+func (s *ReportService) AdminReport(ctx context.Context, groupID uuid.UUID, fromStr, toStr string) (Report, error) {
+	return s.GroupReport(ctx, nil, groupID, fromStr, toStr)
 }
 
 // ---- teacher group overview ----

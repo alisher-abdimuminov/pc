@@ -10,7 +10,7 @@ import { errorMessage } from '@/lib/form'
 import { periodRange, shiftAnchor, todayTashkent, type PeriodMode } from '@/lib/period'
 import { uz } from '@/locales/uz'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** JSON endpoint, e.g. /api/teacher/groups/ID/report */
   url: string
   /** XLSX endpoint with the same query parameters */
@@ -21,7 +21,11 @@ const props = defineProps<{
   showGroup?: boolean
   /** identifies the query cache entry */
   cacheKey: string
-}>()
+  /** false holds the report back (no request, no export) until the caller has what it needs, e.g. a group */
+  enabled?: boolean
+  /** shown instead of the report while disabled */
+  disabledHint?: string
+}>(), { enabled: true })
 
 const mode = ref<PeriodMode>('week')
 const anchor = ref(todayTashkent())
@@ -44,6 +48,7 @@ const { data, isPending, error } = useQuery({
   queryKey: ['report', props.cacheKey, search],
   queryFn: () => fetchReport(`${props.url}?${search.value}`),
   placeholderData: keepPreviousData,
+  enabled: computed(() => props.enabled),
 })
 const exportHref = computed(() => `${props.exportUrl}?${search.value}`)
 
@@ -109,10 +114,11 @@ const badgeText = (c: ReportCell) => (c.status === 'partial' ? `${c.steps}/3` : 
 
       <slot name="filters" />
 
-      <Button as="a" :href="exportHref" variant="outline" class="ml-auto" download><Download class="size-4" aria-hidden="true" />{{ uz.report.exportXlsx }}</Button>
+      <Button v-if="enabled" as="a" :href="exportHref" variant="outline" class="ml-auto" download><Download class="size-4" aria-hidden="true" />{{ uz.report.exportXlsx }}</Button>
     </div>
 
-    <p v-if="isPending" class="text-muted-foreground text-sm">{{ uz.common.loading }}</p>
+    <p v-if="!enabled" class="text-muted-foreground rounded-xl border border-dashed py-12 text-center text-sm" data-testid="report-hint">{{ disabledHint }}</p>
+    <p v-else-if="isPending" class="text-muted-foreground text-sm">{{ uz.common.loading }}</p>
     <p v-else-if="error" class="text-destructive text-sm" role="alert">{{ errorMessage(error) }}</p>
     <template v-else-if="data">
       <p v-if="!data.students.length" class="text-muted-foreground text-sm">{{ uz.report.noStudents }}</p>

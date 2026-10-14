@@ -2,7 +2,10 @@
 package admin
 
 import (
+	"context"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"pc/internal/export"
 
@@ -19,6 +22,7 @@ type Services struct {
 	Groups      *service.GroupService
 	Users       *service.UserService
 	Locations   *service.LocationService
+	Options     *service.OptionService
 	Schedules   *service.ScheduleService
 	Audit       *service.AuditService
 	Reports     *service.ReportService
@@ -40,6 +44,12 @@ func (h *Handler) Register(g fiber.Router) {
 	adminOnly := middleware.RequireRole("admin")
 
 	g.Get("/dashboard", need("dashboard:view"), h.dashboard)
+
+	// unpaginated id + name lists for select boxes; same permission as the list they mirror
+	g.Get("/options/faculties", need("faculties:view"), h.options(h.s.Options.Faculties))
+	g.Get("/options/groups", need("groups:view"), h.options(h.s.Options.Groups))
+	g.Get("/options/locations", need("locations:view"), h.options(h.s.Options.Locations))
+	g.Get("/options/schedules", need("schedules:view"), h.options(h.s.Options.Schedules))
 
 	g.Get("/faculties", need("faculties:view"), h.listFaculties)
 	g.Post("/faculties", need("faculties:create"), h.createFaculty)
@@ -86,6 +96,16 @@ func (h *Handler) Register(g fiber.Router) {
 
 	g.Get("/audit", need("audit:view"), h.listAudit)
 	g.Get("/audit/:id", need("audit:view"), h.getAudit)
+}
+
+func (h *Handler) options(load func(context.Context) ([]service.OptionDTO, error)) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		items, err := load(c.Context())
+		if err != nil {
+			return err
+		}
+		return c.JSON(fiber.Map{"items": items})
+	}
 }
 
 // manageable keeps a little admin away from staff accounts: they may change students only.
@@ -560,8 +580,20 @@ func (h *Handler) getAudit(c *fiber.Ctx) error {
 
 // ---- attendance reports ----
 
-func (h *Handler) report(c *fiber.Ctx) error {
+// reportGroup reads the mandatory group_id of an admin report.
+func reportGroup(c *fiber.Ctx) (uuid.UUID, error) {
 	gid, err := httputil.OptUUID(c, "group_id")
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if gid == nil {
+		return uuid.Nil, apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"group_id": "Guruhni tanlang"})
+	}
+	return *gid, nil
+}
+
+func (h *Handler) report(c *fiber.Ctx) error {
+	gid, err := reportGroup(c)
 	if err != nil {
 		return err
 	}
@@ -573,7 +605,7 @@ func (h *Handler) report(c *fiber.Ctx) error {
 }
 
 func (h *Handler) reportXLSX(c *fiber.Ctx) error {
-	gid, err := httputil.OptUUID(c, "group_id")
+	gid, err := reportGroup(c)
 	if err != nil {
 		return err
 	}
@@ -581,11 +613,11 @@ func (h *Handler) reportXLSX(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	data, err := export.Attendance(rep, gid == nil)
+	data, err := export.Attendance(rep, false)
 	if err != nil {
 		return err
 	}
-	if err := h.s.Reports.AuditExport(c.Context(), httputil.Actor(c), gid, rep); err != nil {
+	if err := h.s.Reports.AuditExport(c.Context(), httputil.Actor(c), &gid, rep); err != nil {
 		return err
 	}
 	c.Set(fiber.HeaderContentType, export.XLSXContentType)

@@ -142,6 +142,8 @@ type FacultyDTO struct {
 	Name      string    `json:"name"`
 	HemisID   *int64    `json:"hemis_id"`
 	CreatedAt time.Time `json:"created_at"`
+	// StudentCount is filled by List only.
+	StudentCount int64 `json:"student_count"`
 }
 
 func facultyDTO(f db.Faculty) FacultyDTO {

@@ -50,6 +50,7 @@ export interface Faculty {
   id: string
   name: string
   hemis_id: number | null
+  student_count: number
   created_at: string
 }
 export interface Group {
@@ -192,6 +193,19 @@ export const groups = {
 }
 export const locations = crud<Location, LocationInput>('locations')
 export const schedules = crud<Schedule, ScheduleInput>('schedules')
+
+/** Unpaginated id + name lists for select boxes. */
+export interface Option {
+  id: string
+  name: string
+}
+const options = (path: string) => () => api<{ items: Option[] }>(`${base}/options/${path}`).then((r) => r.items)
+export const selectOptions = {
+  faculties: options('faculties'),
+  groups: options('groups'),
+  locations: options('locations'),
+  schedules: options('schedules'),
+}
 
 export const users = {
   list: (q?: ListQuery) => api<Page<User>>(`${base}/users${qs(q)}`),

@@ -10,8 +10,7 @@ import UsersPage from './UsersPage.vue'
 const api = vi.hoisted(() => ({
   permissionCatalog: vi.fn(),
   users: { list: vi.fn(), setActive: vi.fn(), regeneratePassword: vi.fn(), create: vi.fn() },
-  faculties: { list: vi.fn() },
-  groups: { list: vi.fn() },
+  selectOptions: { faculties: vi.fn(), groups: vi.fn() },
 }))
 vi.mock('@/api/admin', () => api)
 
@@ -30,8 +29,8 @@ async function render(items: User[], total = items.length, page = 1, viewer?: Pa
   }
   api.permissionCatalog.mockResolvedValue([{ key: 'audit:view', requires: [] }, { key: 'users:view', requires: [] }])
   api.users.list.mockResolvedValue({ items, total, page, page_size: 20 })
-  api.faculties.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100 })
-  api.groups.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100 })
+  api.selectOptions.faculties.mockResolvedValue([])
+  api.selectOptions.groups.mockResolvedValue([])
   const w = mount(UsersPage, {
     attachTo: document.body,
     global: {

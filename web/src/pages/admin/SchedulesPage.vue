@@ -3,7 +3,7 @@ import { CalendarDays, EllipsisVertical, Pencil, Plus, Trash2 } from '@lucide/vu
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { refDebounced } from '@vueuse/core'
 import { computed, reactive, ref } from 'vue'
-import { groups, locations, schedules, users, type Schedule, type ScheduleInput } from '@/api/admin'
+import { schedules, selectOptions, users, type Schedule, type ScheduleInput } from '@/api/admin'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormField from '@/components/FormField.vue'
 import ListFooter from '@/components/ListFooter.vue'
@@ -42,10 +42,10 @@ const STATE = {
 const rows = computed(() => query.data.value?.items ?? [])
 const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
 
-const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
-const locationOptions = useQuery({ queryKey: ['location-options'], queryFn: () => locations.list({ page_size: 100 }) })
-const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
-const lOpts = computed(() => (locationOptions.data.value?.items ?? []).map((l) => ({ value: l.id, label: l.name })))
+const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: selectOptions.groups })
+const locationOptions = useQuery({ queryKey: ['location-options'], queryFn: selectOptions.locations })
+const gOpts = computed(() => (groupOptions.data.value ?? []).map((g) => ({ value: g.id, label: g.name })))
+const lOpts = computed(() => (locationOptions.data.value ?? []).map((l) => ({ value: l.id, label: l.name })))
 
 // ---- form (plain reactive state; the backend is the source of truth for validation) ----
 const formOpen = ref(false)

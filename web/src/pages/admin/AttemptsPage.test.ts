@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminAttempt } from '@/api/admin'
 import AttemptsPage from './AttemptsPage.vue'
 
-const api = vi.hoisted(() => ({ attempts: { list: vi.fn() }, groups: { list: vi.fn() }, users: { setActive: vi.fn() } }))
+const api = vi.hoisted(() => ({ attempts: { list: vi.fn() }, groups: { list: vi.fn() }, selectOptions: { groups: vi.fn() }, users: { setActive: vi.fn() } }))
 vi.mock('@/api/admin', () => api)
 
 const attempt = (over: Partial<AdminAttempt> = {}): AdminAttempt => ({
@@ -17,7 +17,7 @@ const attempt = (over: Partial<AdminAttempt> = {}): AdminAttempt => ({
 
 async function render(items: AdminAttempt[]) {
   api.attempts.list.mockResolvedValue({ items, total: items.length, page: 1, page_size: 20 })
-  api.groups.list.mockResolvedValue({ items: [{ id: 'g1', name: 'TEST-101' }], total: 1, page: 1, page_size: 100 })
+  api.selectOptions.groups.mockResolvedValue([{ id: 'g1', name: 'TEST-101' }])
   const w = mount(AttemptsPage, {
     attachTo: document.body,
     global: {
@@ -140,7 +140,7 @@ describe('admin attempts page', () => {
 
   it('shows the total, the range footer and an avatar fallback with the group under the name', async () => {
     api.attempts.list.mockResolvedValue({ items: [attempt()], total: 41, page: 1, page_size: 20 })
-    api.groups.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100 })
+    api.selectOptions.groups.mockResolvedValue([])
     const w = await render([attempt()])
     expect(w.get('[data-testid="list-total"]').text()).toBe('1')
     expect(w.get('[data-testid="showing"]').text()).toBe("Ko'rsatilmoqda 1–1 / 1")

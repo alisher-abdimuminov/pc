@@ -2,7 +2,7 @@
 import { Ban, Check, EllipsisVertical, Eye, ListChecks, ShieldAlert, X } from '@lucide/vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
-import { attempts, groups, users, type AdminAttempt } from '@/api/admin'
+import { attempts, selectOptions, users, type AdminAttempt } from '@/api/admin'
 import DatePicker from '@/components/DatePicker.vue'
 import ListFooter from '@/components/ListFooter.vue'
 import ListHeader from '@/components/ListHeader.vue'
@@ -35,8 +35,8 @@ const extra = computed(() => ({
 }))
 const { search, page, pageSize, query } = useListQuery('admin-attempts', attempts.list, extra)
 
-const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: () => groups.list({ page_size: 100 }) })
-const gOpts = computed(() => (groupOptions.data.value?.items ?? []).map((g) => ({ value: g.id, label: g.name })))
+const groupOptions = useQuery({ queryKey: ['group-options'], queryFn: selectOptions.groups })
+const gOpts = computed(() => (groupOptions.data.value ?? []).map((g) => ({ value: g.id, label: g.name })))
 const resultOpts = [
   { value: 'true', label: uz.attemptsPage.success },
   { value: 'false', label: uz.attemptsPage.failed },

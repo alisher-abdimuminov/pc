@@ -1,17 +1,22 @@
 <script setup lang="ts">
+import { EllipsisVertical, Eye } from '@lucide/vue'
 import { useQuery } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 import { audit, type AuditEntry } from '@/api/admin'
-import DatePicker from '@/components/DatePicker.vue'
-import ListToolbar from '@/components/ListToolbar.vue'
+import DateRangePicker from '@/components/DateRangePicker.vue'
+import ListFooter from '@/components/ListFooter.vue'
+import ListHeader from '@/components/ListHeader.vue'
 import SelectField from '@/components/SelectField.vue'
-import PaginationBar from '@/components/PaginationBar.vue'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useListQuery } from '@/composables/useListQuery'
+import { useRowSelection } from '@/composables/useRowSelection'
 import { formatDateTime } from '@/lib/format'
 import { uz } from '@/locales/uz'
 
@@ -28,6 +33,14 @@ const extra = computed(() => ({
   actor_id: actorId.value || undefined,
 }))
 const { search, page, pageSize, query } = useListQuery('audit', audit.list, extra)
+
+const filterCount = computed(() => [action, entity, actorId].filter((f) => f.value).length + (from.value || to.value ? 1 : 0))
+function clearFilters() {
+  action.value = entity.value = from.value = to.value = actorId.value = ''
+}
+const rows = computed(() => query.data.value?.items ?? [])
+const { selected, allSelected, toggleOne, toggleAll } = useRowSelection(rows)
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
 
 const actionOpts = Object.entries(uz.audit.actions).map(([value, label]) => ({ value, label }))
 const entityOpts = Object.entries(uz.audit.entities).map(([value, label]) => ({ value, label }))
@@ -56,39 +69,61 @@ const diffRows = computed(() => {
 
 <template>
   <div>
-    <ListToolbar v-model:search="search" :title="uz.audit.title" />
-    <div class="flex flex-wrap items-end gap-2 pb-4">
-      <SelectField v-model="action" class="w-48" :options="actionOpts" :placeholder="uz.audit.action" />
-      <SelectField v-model="entity" class="w-44" :options="entityOpts" :placeholder="uz.audit.entity" />
-      <div class="text-muted-foreground flex flex-col gap-1 text-xs">{{ uz.audit.from }}<DatePicker v-model="from" clearable :placeholder="uz.audit.from" /></div>
-      <div class="text-muted-foreground flex flex-col gap-1 text-xs">{{ uz.audit.to }}<DatePicker v-model="to" clearable :placeholder="uz.audit.to" /></div>
-      <Input v-model="actorId" class="w-72" :placeholder="`${uz.audit.actor} ID`" />
+    <ListHeader v-model:search="search" :title="uz.audit.title" :total="query.data.value?.total" :filter-count="filterCount" @clear-filters="clearFilters">
+      <template #filters>
+        <SelectField v-model="action" :options="actionOpts" :placeholder="uz.audit.action" />
+        <SelectField v-model="entity" :options="entityOpts" :placeholder="uz.audit.entity" />
+        <DateRangePicker v-model:from="from" v-model:to="to" clearable :placeholder="uz.audit.period" />
+        <Input v-model="actorId" :placeholder="`${uz.audit.actor} ID`" />
+      </template>
+    </ListHeader>
+
+    <div class="overflow-x-auto rounded-xl border">
+      <Table>
+        <TableHeader class="bg-muted/50">
+          <TableRow>
+            <TableHead class="w-10"><Checkbox :model-value="allSelected" :aria-label="uz.users.selectAll" data-testid="select-all" @update:model-value="toggleAll" /></TableHead>
+            <TableHead>{{ uz.audit.actor }}</TableHead>
+            <TableHead>{{ uz.audit.action }}</TableHead>
+            <TableHead>{{ uz.audit.entity }}</TableHead>
+            <TableHead>{{ uz.audit.time }}</TableHead>
+            <TableHead class="text-right">{{ uz.common.actions }}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow v-for="e in rows" :key="e.id" :data-state="selected.has(e.id) ? 'selected' : undefined" data-testid="audit-row">
+            <TableCell><Checkbox :model-value="selected.has(e.id)" :aria-label="actorLabel(e)" @update:model-value="toggleOne(e.id, $event)" /></TableCell>
+            <TableCell>
+              <div class="flex items-center gap-3">
+                <Avatar class="size-9"><AvatarFallback>{{ initials(actorLabel(e)) }}</AvatarFallback></Avatar>
+                <div class="min-w-0">
+                  <p class="truncate font-medium">{{ actorLabel(e) }}</p>
+                  <p v-if="e.actor_username" class="text-muted-foreground truncate text-sm">{{ e.actor_username }}</p>
+                </div>
+              </div>
+            </TableCell>
+            <TableCell><Badge variant="secondary">{{ actionLabel(e.action) }}</Badge></TableCell>
+            <TableCell>{{ entityLabel(e.entity_type) }}</TableCell>
+            <TableCell class="whitespace-nowrap">{{ formatDateTime(e.created_at) }}</TableCell>
+            <TableCell class="text-right">
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button variant="outline" size="icon" :aria-label="uz.common.actions" data-testid="row-menu"><EllipsisVertical class="size-4" aria-hidden="true" /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem @select="selectedId = e.id"><Eye class="size-4" aria-hidden="true" />{{ uz.audit.details }}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TableCell>
+          </TableRow>
+          <TableRow v-if="query.data.value && !rows.length">
+            <TableCell colspan="6" class="text-muted-foreground py-8 text-center">{{ uz.common.empty }}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
     </div>
 
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{{ uz.audit.time }}</TableHead>
-          <TableHead>{{ uz.audit.actor }}</TableHead>
-          <TableHead>{{ uz.audit.action }}</TableHead>
-          <TableHead>{{ uz.audit.entity }}</TableHead>
-          <TableHead class="text-right">{{ uz.common.actions }}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        <TableRow v-for="e in query.data.value?.items" :key="e.id">
-          <TableCell class="whitespace-nowrap">{{ formatDateTime(e.created_at) }}</TableCell>
-          <TableCell>{{ actorLabel(e) }}</TableCell>
-          <TableCell><Badge variant="secondary">{{ actionLabel(e.action) }}</Badge></TableCell>
-          <TableCell>{{ entityLabel(e.entity_type) }}</TableCell>
-          <TableCell class="text-right"><Button variant="outline" size="sm" @click="selectedId = e.id">{{ uz.audit.details }}</Button></TableCell>
-        </TableRow>
-        <TableRow v-if="query.data.value && !query.data.value.items.length">
-          <TableCell colspan="5" class="text-muted-foreground text-center">{{ uz.common.empty }}</TableCell>
-        </TableRow>
-      </TableBody>
-    </Table>
-    <PaginationBar v-if="query.data.value" v-model:page="page" :page-size="pageSize" :total="query.data.value.total" />
+    <ListFooter v-if="query.data.value" v-model:page="page" :page-size="pageSize" :total="query.data.value.total" :row-count="rows.length" />
 
     <Dialog :open="!!selectedId" @update:open="(v: boolean) => !v && (selectedId = null)">
       <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
