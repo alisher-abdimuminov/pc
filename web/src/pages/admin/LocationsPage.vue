@@ -57,7 +57,7 @@ function openForm(l: Location | null) {
   editing.value = l
   formError.value = ''
   pointsError.value = ''
-  points.value = l ? l.polygon.map(([a, b]) => `${a},${b}`) : ['', '', '']
+  points.value = l ? l.polygon.map(([a, b]) => `${a},${b}`) : ['', '', '', '']
   resetForm({ values: { name: l?.name ?? '', tolerance_meters: l?.tolerance_meters ?? 30, location_url: l?.location_url ?? '' } })
   formOpen.value = true
 }
