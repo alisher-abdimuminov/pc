@@ -20,11 +20,40 @@ var (
 	errUsernameTaken   = errors.New("username belongs to another account")
 )
 
+const (
+	firstLoginLoginWait = 2 * time.Second // before POST /auth/login
+	firstLoginMeWait    = 3 * time.Second // before GET /account/me
+)
+
+// sleepCtx waits d when enabled, returning early with the context's error if it is cancelled.
+func sleepCtx(ctx context.Context, enabled bool, d time.Duration) error {
+	if !enabled {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 // hemisLogin forwards the credentials to HEMIS, upserts the student from the returned profile and
 // opens our own session. The HEMIS password is never stored or logged.
-func (s *AuthService) hemisLogin(ctx context.Context, key, username, password string, meta Actor) (*LoginResult, error) {
-	token, err := s.hemis.Login(ctx, username, password)
+func (s *AuthService) hemisLogin(ctx context.Context, key, username, password string, firstLogin bool, meta Actor) (*LoginResult, error) {
+	// HEMIS tends to fail when a new student's first requests arrive back to back, so a first login
+	// (no local account yet) pauses before each call.
+	err := sleepCtx(ctx, firstLogin, firstLoginLoginWait)
+	var token string
+	if err == nil {
+		token, err = s.hemis.Login(ctx, username, password)
+	}
 	var prof hemis.Profile
+	if err == nil {
+		err = sleepCtx(ctx, firstLogin, firstLoginMeWait)
+	}
 	if err == nil {
 		prof, err = s.hemis.Me(ctx, token)
 	}

@@ -111,7 +111,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	case found && localOK && s.cfg.DevStudentPasswordLogin:
 		return s.finishLocal(ctx, key, username, user, true, meta)
 	case s.hemis != nil:
-		return s.hemisLogin(ctx, key, username, password, meta)
+		return s.hemisLogin(ctx, key, username, password, !found, meta)
 	case found && localOK: // a student with the right password, but no HEMIS and no dev switch
 		return s.fail(ctx, key, username, "student_login_disabled", errStudentLogin, meta)
 	default:
