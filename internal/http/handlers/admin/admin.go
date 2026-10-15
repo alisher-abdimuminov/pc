@@ -93,6 +93,7 @@ func (h *Handler) Register(g fiber.Router) {
 	g.Get("/reports/attendance.xlsx", need("reports:view"), h.reportXLSX)
 	g.Get("/students/:id/attempts", need("attempts:view"), h.studentAttempts)
 	g.Get("/attempts", need("attempts:view"), h.listAttempts)
+	g.Delete("/attempts/:id", adminOnly, h.deleteAttempt)
 
 	g.Get("/audit", need("audit:view"), h.listAudit)
 	g.Get("/audit/:id", need("audit:view"), h.getAudit)
@@ -703,4 +704,15 @@ func (h *Handler) syncFaculties(c *fiber.Ctx) error {
 		return err
 	}
 	return c.JSON(res)
+}
+
+func (h *Handler) deleteAttempt(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := h.s.Attempts.Delete(c.Context(), httputil.Actor(c), id); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

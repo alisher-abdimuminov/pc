@@ -5,17 +5,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pc/internal/apperr"
+	"pc/internal/audit"
 	"pc/internal/db"
+	"pc/internal/storage"
 )
 
 // AttemptsAdminService lists attendance attempts across all students (admin "Urinishlar" page).
 type AttemptsAdminService struct {
-	pool *pgxpool.Pool
-	loc  *time.Location
+	pool  *pgxpool.Pool
+	loc   *time.Location
+	store storage.Storage
+}
+
+// WithStorage lets Delete remove the attempt's selfie file too.
+func (s *AttemptsAdminService) WithStorage(st storage.Storage) *AttemptsAdminService {
+	s.store = st
+	return s
 }
 
 func NewAttemptsAdminService(pool *pgxpool.Pool, loc *time.Location) *AttemptsAdminService {
@@ -120,4 +130,33 @@ func (s *AttemptsAdminService) List(ctx context.Context, p ListParams, f Attempt
 		items[i] = d
 	}
 	return newPage(items, total, p), nil
+}
+
+// Delete removes one attempt and its selfie. If it was the step's only successful attempt, the step
+// goes back to unsuccessful so the daily status stays truthful. The audit entry is written in the
+// same transaction; the file is removed after the commit (a leftover file is harmless).
+func (s *AttemptsAdminService) Delete(ctx context.Context, actor Actor, id uuid.UUID) error {
+	var image string
+	err := InTx(ctx, s.pool, func(tx pgx.Tx, q *db.Queries) error {
+		a, err := q.GetAttemptForDelete(ctx, id)
+		if err != nil {
+			return notFoundOr(err)
+		}
+		image = a.Image
+		if err := q.DeleteAttempt(ctx, id); err != nil {
+			return err
+		}
+		if err := q.RefreshStepSuccess(ctx, a.StepID); err != nil {
+			return err
+		}
+		before := map[string]any{"student_id": a.StudentID, "date": dateStr(a.Date), "step": a.Step, "success": a.Success, "attempted_at": a.AttemptedAt.Time}
+		return audit.Write(ctx, tx, actor.entry(audit.ActionDelete, "attendance_attempt", &id, before, nil))
+	})
+	if err != nil {
+		return mapDBError(err)
+	}
+	if image != "" && s.store != nil {
+		_ = s.store.Delete(ctx, image)
+	}
+	return nil
 }

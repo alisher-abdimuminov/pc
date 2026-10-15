@@ -255,6 +255,7 @@ export interface AdminAttempt {
 
 export const attempts = {
   list: (q?: ListQuery) => api<Page<AdminAttempt>>(`${base}/attempts${qs(q)}`),
+  remove: (id: string) => api<void>(`${base}/attempts/${id}`, send('DELETE')),
 }
 
 export const audit = {

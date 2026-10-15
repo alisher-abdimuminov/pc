@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Ban, Check, EllipsisVertical, Eye, ListChecks, ShieldAlert, X } from '@lucide/vue'
+import { Ban, Check, Trash2, EllipsisVertical, Eye, ListChecks, ShieldAlert, X } from '@lucide/vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 import { attempts, selectOptions, users, type AdminAttempt } from '@/api/admin'
@@ -18,7 +18,7 @@ import { useListQuery } from '@/composables/useListQuery'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { errorMessage } from '@/lib/form'
 import { formatDateTime, formatTime } from '@/lib/format'
-import { useCan } from '@/lib/permissions'
+import { useCan, useIsAdmin } from '@/lib/permissions'
 import { uz } from '@/locales/uz'
 
 const groupId = ref('')
@@ -63,6 +63,7 @@ const num = (v: number | null, d = 2) => (v === null ? '—' : v.toFixed(d))
 const selected = ref<AdminAttempt | null>(null)
 
 const can = useCan()
+const isAdmin = useIsAdmin()
 
 // ---- block the student (deactivate: ends their sessions) ----
 const qc = useQueryClient()
@@ -81,10 +82,24 @@ const block = useMutation({
   },
   onError: (e) => (blockError.value = errorMessage(e)),
 })
+// ---- delete the attempt (admin only) ----
+const confirmDelete = ref(false)
+const deleteError = ref('')
+const remove = useMutation({
+  mutationFn: (id: string) => attempts.remove(id),
+  onSuccess: async () => {
+    select(null)
+    await qc.invalidateQueries({ queryKey: ['admin-attempts'] })
+    await qc.invalidateQueries({ queryKey: ['attempts'] })
+  },
+  onError: (e) => (deleteError.value = errorMessage(e)),
+})
 function select(a: AdminAttempt | null) {
   selected.value = a
   confirmBlock.value = false
   blockError.value = ''
+  confirmDelete.value = false
+  deleteError.value = ''
 }
 </script>
 
@@ -236,6 +251,20 @@ function select(a: AdminAttempt | null) {
               </div>
             </div>
             <p v-if="blockError" class="text-destructive text-sm" role="alert">{{ blockError }}</p>
+          </div>
+          <div v-if="isAdmin()" class="space-y-2 sm:col-span-2" data-testid="delete-section">
+            <Button v-if="!confirmDelete" variant="destructive" data-testid="delete-button" @click="confirmDelete = true">
+              <Trash2 class="size-4" aria-hidden="true" />{{ uz.attemptsPage.deleteAttempt }}
+            </Button>
+            <div v-else class="space-y-2 rounded-md border border-rose-300 p-3 text-sm dark:border-rose-900" role="alertdialog" data-testid="delete-confirm">
+              <p class="font-medium">{{ uz.attemptsPage.deleteTitle }}</p>
+              <p class="text-muted-foreground">{{ uz.attemptsPage.deleteHint }}</p>
+              <div class="flex gap-2">
+                <Button variant="destructive" size="sm" :disabled="remove.isPending.value" data-testid="delete-confirm-button" @click="remove.mutate(selected.id)">{{ uz.common.delete }}</Button>
+                <Button variant="outline" size="sm" @click="confirmDelete = false">{{ uz.common.cancel }}</Button>
+              </div>
+            </div>
+            <p v-if="deleteError" class="text-destructive text-sm" role="alert">{{ deleteError }}</p>
           </div>
           <Button as-child variant="outline" class="sm:col-span-2">
             <RouterLink :to="`/admin/students/${selected.student_id}/attempts`">{{ uz.attemptsPage.studentAttempts }}</RouterLink>

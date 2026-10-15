@@ -108,3 +108,19 @@ DELETE FROM attendances WHERE id IN (
 
 -- name: CountDemoAttempts :one
 SELECT count(*) FROM attendance_attempts WHERE user_agent = 'seed-demo';
+
+-- name: GetAttemptForDelete :one
+SELECT t.id, t.step_id, t.image, t.success, t.attempted_at, a.student_id, a.date, st.step::int AS step
+FROM attendance_attempts t
+JOIN attendance_steps st ON st.id = t.step_id
+JOIN attendances a ON a.id = st.attendance_id
+WHERE t.id = $1
+FOR UPDATE OF t;
+
+-- name: DeleteAttempt :exec
+DELETE FROM attendance_attempts WHERE id = $1;
+
+-- name: RefreshStepSuccess :exec
+-- Re-derives a step's success flag from its remaining attempts (used after an attempt is deleted).
+UPDATE attendance_steps SET success = EXISTS (SELECT 1 FROM attendance_attempts WHERE step_id = $1 AND success)
+WHERE id = $1;

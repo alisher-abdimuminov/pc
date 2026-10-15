@@ -225,6 +225,15 @@ func (q *Queries) CreateSeedAttempt(ctx context.Context, arg CreateSeedAttemptPa
 	return id, err
 }
 
+const deleteAttempt = `-- name: DeleteAttempt :exec
+DELETE FROM attendance_attempts WHERE id = $1
+`
+
+func (q *Queries) DeleteAttempt(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAttempt, id)
+	return err
+}
+
 const deleteDemoAttendances = `-- name: DeleteDemoAttendances :execrows
 DELETE FROM attendances WHERE id IN (
     SELECT DISTINCT st.attendance_id FROM attendance_attempts t JOIN attendance_steps st ON st.id = t.step_id
@@ -275,6 +284,42 @@ type EnsureStepParams struct {
 func (q *Queries) EnsureStep(ctx context.Context, arg EnsureStepParams) error {
 	_, err := q.db.Exec(ctx, ensureStep, arg.AttendanceID, arg.Step)
 	return err
+}
+
+const getAttemptForDelete = `-- name: GetAttemptForDelete :one
+SELECT t.id, t.step_id, t.image, t.success, t.attempted_at, a.student_id, a.date, st.step::int AS step
+FROM attendance_attempts t
+JOIN attendance_steps st ON st.id = t.step_id
+JOIN attendances a ON a.id = st.attendance_id
+WHERE t.id = $1
+FOR UPDATE OF t
+`
+
+type GetAttemptForDeleteRow struct {
+	ID          uuid.UUID          `json:"id"`
+	StepID      uuid.UUID          `json:"step_id"`
+	Image       string             `json:"image"`
+	Success     bool               `json:"success"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	StudentID   uuid.UUID          `json:"student_id"`
+	Date        pgtype.Date        `json:"date"`
+	Step        int32              `json:"step"`
+}
+
+func (q *Queries) GetAttemptForDelete(ctx context.Context, id uuid.UUID) (GetAttemptForDeleteRow, error) {
+	row := q.db.QueryRow(ctx, getAttemptForDelete, id)
+	var i GetAttemptForDeleteRow
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.Image,
+		&i.Success,
+		&i.AttemptedAt,
+		&i.StudentID,
+		&i.Date,
+		&i.Step,
+	)
+	return i, err
 }
 
 const getStep = `-- name: GetStep :one
@@ -535,6 +580,17 @@ UPDATE attendance_steps SET success = true WHERE id = $1
 
 func (q *Queries) MarkStepSuccess(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markStepSuccess, id)
+	return err
+}
+
+const refreshStepSuccess = `-- name: RefreshStepSuccess :exec
+UPDATE attendance_steps SET success = EXISTS (SELECT 1 FROM attendance_attempts WHERE step_id = $1 AND success)
+WHERE id = $1
+`
+
+// Re-derives a step's success flag from its remaining attempts (used after an attempt is deleted).
+func (q *Queries) RefreshStepSuccess(ctx context.Context, stepID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, refreshStepSuccess, stepID)
 	return err
 }
 

@@ -64,6 +64,7 @@ func TestLittleAdminSeesOnlyWhatWasGranted(t *testing.T) {
 	// account security stays with admins
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/users"}, {"GET", "/permissions"},
+		{"DELETE", "/attempts/00000000-0000-0000-0000-000000000000"},
 		{"POST", "/users/00000000-0000-0000-0000-000000000000/regenerate-password"},
 		{"GET", "/users/00000000-0000-0000-0000-000000000000/sensitive"},
 		{"PUT", "/users/00000000-0000-0000-0000-000000000000/permissions"},

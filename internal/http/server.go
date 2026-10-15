@@ -146,7 +146,7 @@ func NewServer(d Deps) *fiber.App {
 	adminh.New(adminh.Services{
 		Reports:     reports,
 		Enroll:      enrollSvc,
-		Attempts:    service.NewAttemptsAdminService(d.Pool, d.Cfg.Location),
+		Attempts:    service.NewAttemptsAdminService(d.Pool, d.Cfg.Location).WithStorage(store),
 		GroupSync:   service.NewGroupSyncService(d.Pool, groupSource),
 		FacultySync: service.NewFacultySyncService(d.Pool, facultySource),
 		Dashboard:   service.NewDashboardService(d.Pool, d.Cfg.Location),

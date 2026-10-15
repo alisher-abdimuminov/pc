@@ -534,6 +534,11 @@ export const uz = {
     blockTitle: "Foydalanuvchini bloklaysizmi?",
     blockHint:
       "Hisob faol bo'lmay qoladi va barcha sessiyalari tugatiladi. Uni foydalanuvchilar sahifasidan qayta faollashtirish mumkin.",
+    deleteAttempt: "Urinishni o'chirish",
+    deleteTitle: "Urinishni o'chirasizmi?",
+    deleteHint:
+      "Urinish va uning selfisi butunlay o'chiriladi. Bu bosqichdagi boshqa muvaffaqiyatli urinish bo'lmasa, bosqich bajarilmagan deb hisoblanadi.",
+    deleted: "Urinish o'chirildi",
     spoofSuspected: "Soxta urinish shubhasi: jonlilik tekshiruvidan o'tmadi",
   },
   audit: {

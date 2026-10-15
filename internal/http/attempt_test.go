@@ -276,6 +276,28 @@ func TestAttemptSuccessAcrossTheDay(t *testing.T) {
 	a.get("/api/files/selfies/"+id, a.cookieB, 404)
 	a.get("/api/files/selfies/"+id, a.stu, 404) // and the student cannot fetch it back
 	a.get("/api/teacher/students/"+a.studentA1+"/attempts", a.cookieA, 404)
+
+	// only an admin can delete an attempt; doing so removes the selfie and un-succeeds the step
+	if resp, _ := a.do("DELETE", "/api/admin/attempts/"+id, "", a.cookieA); resp.StatusCode != 403 {
+		t.Fatalf("teacher delete: %d", resp.StatusCode)
+	}
+	if resp, _ := a.do("DELETE", "/api/admin/attempts/"+id, "", a.admin); resp.StatusCode != 204 {
+		t.Fatalf("admin delete: %d", resp.StatusCode)
+	}
+	if resp, _ := a.do("DELETE", "/api/admin/attempts/"+id, "", a.admin); resp.StatusCode != 404 {
+		t.Fatalf("second delete: %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(a.cfg.UploadDir, img)); !os.IsNotExist(err) {
+		t.Fatal("selfie file must be removed")
+	}
+	var done int
+	a.pool.QueryRow(ctx, `SELECT count(*) FROM attendance_steps WHERE success AND step = 1`).Scan(&done)
+	if done != 0 {
+		t.Fatal("step 1 must no longer be successful")
+	}
+	if a.audits("delete", "attendance_attempt") != 1 {
+		t.Fatal("delete not audited")
+	}
 }
 
 func TestAttemptLocationFailures(t *testing.T) {
