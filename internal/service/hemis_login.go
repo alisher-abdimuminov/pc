@@ -34,7 +34,7 @@ func (s *AuthService) hemisLogin(ctx context.Context, key, username, password st
 		return s.fail(ctx, key, username, "hemis_invalid_credentials", errBadCredentials, meta)
 	case errors.Is(err, hemis.ErrUnavailable):
 		s.log.Warn("hemis unavailable during login", zap.Error(err)) // the error text carries no credentials
-		return s.fail(ctx, key, username, "hemis_unavailable", errHemisDown, meta)
+		return s.fail(ctx, key, username, "hemis_unavailable", errHemisDown, meta, err.Error())
 	default:
 		return nil, err // e.g. the request was cancelled
 	}

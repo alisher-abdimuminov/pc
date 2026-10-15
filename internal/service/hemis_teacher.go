@@ -36,7 +36,7 @@ const (
 )
 
 // OAuthError is a failed teacher sign-in; Code is safe to put in a redirect URL.
-type OAuthError struct{ Code string }
+type OAuthError struct{ Code, Detail string }
 
 func (e *OAuthError) Error() string { return "hemis oauth: " + e.Code }
 
@@ -65,10 +65,15 @@ func (s *AuthService) TeacherAuthorizeURL(state string) string {
 }
 
 // OAuthFailed audits a failed attempt. The reason is a code, never a secret, code or token.
-func (s *AuthService) OAuthFailed(ctx context.Context, reason string, meta Actor) {
+// detail is an optional safe cause (e.g. "status 503"), never a body or URL.
+func (s *AuthService) OAuthFailed(ctx context.Context, reason string, meta Actor, detail ...string) {
+	after := map[string]any{"method": OAuthMethod, "reason": reason}
+	if len(detail) > 0 && detail[0] != "" {
+		after["detail"] = detail[0]
+	}
 	_ = audit.Write(ctx, s.pool, audit.Entry{
 		Action: audit.ActionLoginFailed, EntityType: "user",
-		After: map[string]any{"method": OAuthMethod, "reason": reason},
+		After: after,
 		IP:    meta.IP, UserAgent: meta.UserAgent,
 	})
 }
@@ -89,7 +94,7 @@ func (s *AuthService) TeacherLoginWithCode(ctx context.Context, code string, met
 	case err == nil:
 		return res, nil
 	case errors.As(err, &oe):
-		s.OAuthFailed(ctx, oe.Code, meta)
+		s.OAuthFailed(ctx, oe.Code, meta, oe.Detail)
 		return nil, err
 	default:
 		s.log.Error("hemis oauth login failed", zap.Error(err))
@@ -147,7 +152,7 @@ func (s *AuthService) teacherLogin(ctx context.Context, code string, meta Actor)
 func (s *AuthService) classifyOAuth(err error, code string) error {
 	if errors.Is(err, hemis.ErrUnavailable) {
 		s.log.Warn("hemis oauth unavailable", zap.Error(err)) // the error text holds no URL, body or token
-		return oauthErr(OAuthErrUnavailable)
+		return &OAuthError{Code: OAuthErrUnavailable, Detail: err.Error()}
 	}
 	if errors.Is(err, hemis.ErrOAuthToken) || errors.Is(err, hemis.ErrOAuthProfile) {
 		s.log.Warn("hemis oauth rejected", zap.Error(err))

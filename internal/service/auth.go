@@ -119,11 +119,11 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	}
 }
 
-func (s *AuthService) fail(ctx context.Context, key, username, reason string, err error, meta Actor) (*LoginResult, error) {
+func (s *AuthService) fail(ctx context.Context, key, username, reason string, err error, meta Actor, detail ...string) (*LoginResult, error) {
 	if reason != "hemis_unavailable" { // an outage is not the user's fault: do not count it against them
 		s.limiter.RecordFailure(key)
 	}
-	s.auditFailure(ctx, username, reason, meta)
+	s.auditFailure(ctx, username, reason, meta, detail...)
 	return nil, err
 }
 
@@ -175,10 +175,15 @@ func (s *AuthService) createSession(ctx context.Context, tx pgx.Tx, q *db.Querie
 	return raw, expires, audit.Write(ctx, tx, e)
 }
 
-func (s *AuthService) auditFailure(ctx context.Context, username, reason string, meta Actor) {
+// auditFailure records a failed login. detail is an optional safe cause (e.g. "status 503").
+func (s *AuthService) auditFailure(ctx context.Context, username, reason string, meta Actor, detail ...string) {
+	after := map[string]any{"username": username, "reason": reason}
+	if len(detail) > 0 && detail[0] != "" {
+		after["detail"] = detail[0]
+	}
 	_ = audit.Write(ctx, s.pool, audit.Entry{
 		Action: audit.ActionLoginFailed, EntityType: "user",
-		After: map[string]any{"username": username, "reason": reason},
+		After: after,
 		IP:    meta.IP, UserAgent: meta.UserAgent,
 	})
 }
