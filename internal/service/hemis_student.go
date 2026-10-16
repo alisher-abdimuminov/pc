@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,52 +22,50 @@ var (
 	errUsernameTaken   = errors.New("username belongs to another account")
 )
 
-const (
-	firstLoginLoginWait = 2 * time.Second // before POST /auth/login
-	firstLoginMeWait    = 3 * time.Second // before GET /account/me
-)
-
-// sleepCtx waits d when enabled, returning early with the context's error if it is cancelled.
-func sleepCtx(ctx context.Context, enabled bool, d time.Duration) error {
-	if !enabled {
-		return nil
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
+// studentOAuth holds what the student sign-in needs besides the AuthService basics.
+type studentOAuth struct {
+	client hemis.StudentOAuth
+	photos *HemisPhotoService
 }
 
-// hemisLogin forwards the credentials to HEMIS, upserts the student from the returned profile and
-// opens our own session. The HEMIS password is never stored or logged.
-func (s *AuthService) hemisLogin(ctx context.Context, key, username, password string, firstLogin bool, meta Actor) (*LoginResult, error) {
-	// HEMIS tends to fail when a new student's first requests arrive back to back, so a first login
-	// (no local account yet) pauses before each call.
-	err := sleepCtx(ctx, firstLogin, firstLoginLoginWait)
-	var token string
-	if err == nil {
-		token, err = s.hemis.Login(ctx, username, password)
+// WithStudentOAuth enables student sign-in through HEMIS OAuth. photos may be nil.
+func (s *AuthService) WithStudentOAuth(c hemis.StudentOAuth, photos *HemisPhotoService, log *zap.Logger) *AuthService {
+	s.student = &studentOAuth{client: c, photos: photos}
+	if log != nil {
+		s.log = log
 	}
-	var prof hemis.Profile
-	if err == nil {
-		err = sleepCtx(ctx, firstLogin, firstLoginMeWait)
+	return s
+}
+
+// StudentOAuthEnabled reports whether the HEMIS student button should work.
+func (s *AuthService) StudentOAuthEnabled() bool { return s.student != nil }
+
+// StudentAuthorizeURL is where the browser goes to sign in at HEMIS as a student.
+func (s *AuthService) StudentAuthorizeURL(state string) string {
+	return s.student.client.AuthorizeURL(state)
+}
+
+// StudentLoginWithCode finishes the authorization-code flow for a student: exchange the code, read the
+// profile, sync the student with their faculty and group and open our own session.
+// Failures are *OAuthError (and are audited here).
+func (s *AuthService) StudentLoginWithCode(ctx context.Context, code string, meta Actor) (*LoginResult, error) {
+	res, err := s.studentLogin(ctx, code, meta)
+	return s.finishOAuth(ctx, res, err, meta)
+}
+
+func (s *AuthService) studentLogin(ctx context.Context, code string, meta Actor) (*LoginResult, error) {
+	st := s.student
+	token, err := st.client.ExchangeCode(ctx, code)
+	if err != nil {
+		return nil, s.classifyOAuth(err, OAuthErrToken)
 	}
-	if err == nil {
-		prof, err = s.hemis.Me(ctx, token)
+	prof, err := st.client.StudentProfile(ctx, token)
+	if err != nil {
+		return nil, s.classifyOAuth(err, OAuthErrProfile)
 	}
-	switch {
-	case err == nil:
-	case errors.Is(err, hemis.ErrInvalidCredentials):
-		return s.fail(ctx, key, username, "hemis_invalid_credentials", errBadCredentials, meta)
-	case errors.Is(err, hemis.ErrUnavailable):
-		s.log.Warn("hemis unavailable during login", zap.Error(err)) // the error text carries no credentials
-		return s.fail(ctx, key, username, "hemis_unavailable", errHemisDown, meta, err.Error())
-	default:
-		return nil, err // e.g. the request was cancelled
+	username := strings.ToLower(strings.TrimSpace(prof.StudentIDNumber))
+	if username == "" {
+		username = strconv.FormatInt(prof.HemisID, 10)
 	}
 
 	var (
@@ -75,12 +75,12 @@ func (s *AuthService) hemisLogin(ctx context.Context, key, username, password st
 	)
 	run := func() error {
 		return InTx(ctx, s.pool, func(tx pgx.Tx, q *db.Queries) error {
-			u, err := s.upsertStudent(ctx, tx, q, username, prof, meta)
+			u, err := s.upsertStudent(ctx, tx, q, username, *prof, meta)
 			if err != nil {
 				return err
 			}
 			user = u
-			raw, expires, err = s.createSession(ctx, tx, q, u, meta, "")
+			raw, expires, err = s.createSession(ctx, tx, q, u, meta, OAuthMethod)
 			return err
 		})
 	}
@@ -91,21 +91,21 @@ func (s *AuthService) hemisLogin(ctx context.Context, key, username, password st
 	}
 	switch {
 	case errors.Is(err, errInactiveStudent):
-		return s.fail(ctx, key, username, "inactive", errAccountInactive, meta)
+		return nil, oauthErr(OAuthErrInactive)
 	case errors.Is(err, errUsernameTaken):
-		return s.fail(ctx, key, username, "username_conflict", errBadCredentials, meta)
+		return nil, oauthErr(OAuthErrProfile)
 	case err != nil:
 		return nil, err
 	}
-	s.limiter.Reset(key)
+	s.limiter.Reset("oauth|" + meta.IP)
 
-	if s.photos != nil && prof.ImageURL != "" {
+	if st.photos != nil && prof.ImageURL != "" {
 		uid, url := user.ID, prof.ImageURL
 		s.runBG(func() {
 			// detached from the request: the login must not wait for (or fail on) the photo
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
-			if err := s.photos.Sync(ctx, uid, url); err != nil {
+			if err := st.photos.Sync(ctx, uid, url); err != nil {
 				s.log.Warn("hemis photo sync failed", zap.String("user_id", uid.String()), zap.Error(err))
 			}
 		})

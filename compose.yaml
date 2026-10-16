@@ -43,7 +43,7 @@ services:
         build: .
         env_file: .env
         environment:
-            # HEMIS OAuth for teachers (see .env.example); empty = disabled
+            # HEMIS OAuth for teachers and students (see .env.example); empty = disabled
             HEMIS_IMAGE_HOSTS: ${HEMIS_IMAGE_HOSTS:-}
             HEMIS_OAUTH_CLIENT_ID: ${HEMIS_OAUTH_CLIENT_ID:-}
             HEMIS_OAUTH_CLIENT_SECRET: ${HEMIS_OAUTH_CLIENT_SECRET:-}
@@ -52,6 +52,9 @@ services:
             HEMIS_TEACHER_ACCESS_TOKEN_URL: ${HEMIS_TEACHER_ACCESS_TOKEN_URL:-}
             HEMIS_TEACHER_RESOURCE_OWNER_URL: ${HEMIS_TEACHER_RESOURCE_OWNER_URL:-}
             HEMIS_TEACHER_AUTO_CREATE: ${HEMIS_TEACHER_AUTO_CREATE:-true}
+            HEMIS_STUDENT_AUTHORIZE_URL: ${HEMIS_STUDENT_AUTHORIZE_URL:-}
+            HEMIS_STUDENT_ACCESS_TOKEN_URL: ${HEMIS_STUDENT_ACCESS_TOKEN_URL:-}
+            HEMIS_STUDENT_RESOURCE_OWNER_URL: ${HEMIS_STUDENT_RESOURCE_OWNER_URL:-}
         depends_on:
             postgres:
                 condition: service_healthy

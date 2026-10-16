@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,11 +19,16 @@ const (
 	stateCookie   = "hemis_oauth_state"
 	callbackPath  = "/auth/callback"
 	stateLifetime = 10 * time.Minute
+
+	// The state starts with the role the flow was started for, so one callback serves both.
+	teacherPrefix = "t."
+	studentPrefix = "s."
 )
 
-// RegisterHemisOAuth mounts the teacher OAuth start route on /api/auth.
+// RegisterHemisOAuth mounts the teacher and student OAuth start routes on /api/auth.
 func (h *Handler) RegisterHemisOAuth(g fiber.Router) {
 	g.Get("/hemis/teacher/start", h.OAuthStart)
+	g.Get("/hemis/student/start", h.StudentOAuthStart)
 }
 
 // RegisterCallback mounts GET /auth/callback. It is a Go route (not the SPA) and must be
@@ -42,21 +48,30 @@ func (h *Handler) stateCookie(value string, expires time.Time) *fiber.Cookie {
 	}
 }
 
-// OAuthStart sets the CSRF state cookie and sends the browser to HEMIS.
+// OAuthStart sets the CSRF state cookie and sends the browser to HEMIS as a teacher.
 func (h *Handler) OAuthStart(c *fiber.Ctx) error {
-	if !h.auth.TeacherOAuthEnabled() {
+	return h.start(c, h.auth.TeacherOAuthEnabled, teacherPrefix, func(s string) string { return h.auth.TeacherAuthorizeURL(s) })
+}
+
+// StudentOAuthStart does the same for a student.
+func (h *Handler) StudentOAuthStart(c *fiber.Ctx) error {
+	return h.start(c, h.auth.StudentOAuthEnabled, studentPrefix, func(s string) string { return h.auth.StudentAuthorizeURL(s) })
+}
+
+func (h *Handler) start(c *fiber.Ctx, enabled func() bool, prefix string, authorizeURL func(state string) string) error {
+	if !enabled() {
 		return loginError(c, service.OAuthErrUnavailable)
 	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return err
 	}
-	state := base64.RawURLEncoding.EncodeToString(buf)
+	state := prefix + base64.RawURLEncoding.EncodeToString(buf)
 	c.Cookie(h.stateCookie(state, time.Now().Add(stateLifetime)))
-	return c.Redirect(h.auth.TeacherAuthorizeURL(state), fiber.StatusFound)
+	return c.Redirect(authorizeURL(state), fiber.StatusFound)
 }
 
-// OAuthCallback finishes the sign-in. Every outcome is a redirect: /teacher or /login?error=<code>.
+// OAuthCallback finishes the sign-in. Every outcome is a redirect: /teacher, /student or /login?error=<code>.
 func (h *Handler) OAuthCallback(c *fiber.Ctx) error {
 	m := meta(c)
 	want := c.Cookies(stateCookie)
@@ -65,9 +80,6 @@ func (h *Handler) OAuthCallback(c *fiber.Ctx) error {
 	fail := func(code string) error {
 		h.auth.OAuthRecordFailure(m.IP)
 		return loginError(c, code)
-	}
-	if !h.auth.TeacherOAuthEnabled() {
-		return loginError(c, service.OAuthErrUnavailable)
 	}
 	if !h.auth.OAuthAllowed(m.IP) {
 		h.auth.OAuthFailed(c.Context(), service.OAuthErrRateLimited, m)
@@ -79,13 +91,23 @@ func (h *Handler) OAuthCallback(c *fiber.Ctx) error {
 		h.auth.OAuthFailed(c.Context(), service.OAuthErrState, m)
 		return fail(service.OAuthErrState)
 	}
+	// the state is ours (httpOnly cookie, just compared), so its prefix says which flow this is
+	student := strings.HasPrefix(want, studentPrefix)
+	if (student && !h.auth.StudentOAuthEnabled()) || (!student && !h.auth.TeacherOAuthEnabled()) {
+		h.auth.OAuthFailed(c.Context(), service.OAuthErrUnavailable, m)
+		return loginError(c, service.OAuthErrUnavailable)
+	}
 	code := c.Query("code")
 	if c.Query("error") != "" || code == "" {
 		h.auth.OAuthFailed(c.Context(), service.OAuthErrDenied, m)
 		return fail(service.OAuthErrDenied)
 	}
 
-	res, err := h.auth.TeacherLoginWithCode(c.Context(), code, m)
+	login, home := h.auth.TeacherLoginWithCode, "/teacher"
+	if student {
+		login, home = h.auth.StudentLoginWithCode, "/student"
+	}
+	res, err := login(c.Context(), code, m)
 	if err != nil {
 		var oe *service.OAuthError
 		if errors.As(err, &oe) {
@@ -97,5 +119,5 @@ func (h *Handler) OAuthCallback(c *fiber.Ctx) error {
 		Name: middleware.CookieName, Value: res.Token, Path: "/",
 		Expires: res.Expires, HTTPOnly: true, SameSite: fiber.CookieSameSiteLaxMode, Secure: h.cfg.CookieSecure,
 	})
-	return c.Redirect("/teacher", fiber.StatusFound)
+	return c.Redirect(home, fiber.StatusFound)
 }

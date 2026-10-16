@@ -1,8 +1,7 @@
 {
   "930001": {
-    "password": "hemis-demo-1",
     "profile": {
-      "id": 930001,
+      "id": 930001, "student_id_number": "930001",
       "first_name": "ALI", "second_name": "VALIYEV", "third_name": "KARIM O'G'LI",
       "full_name": "VALIYEV ALI KARIM O'G'LI", "short_name": "Valiyev A.K.",
       "image": "http://hemis-mock:9000/uploads/face_a1.jpg",

@@ -128,18 +128,21 @@ COOKIE_SECURE=true
 MAX_ATTEMPTS_PER_STEP=5
 GPS_MAX_ACCURACY_M=100
 SELFIE_RETENTION_DAYS=30
-DEV_STUDENT_PASSWORD_LOGIN=false  # dev only, until HEMIS login exists
+DEV_STUDENT_PASSWORD_LOGIN=false  # dev only: lets seeded students use the password form
 HEMIS_BASE_URL=https://student.samdpi.uz/rest/v1   # phase 6
 HEMIS_TIMEOUT=10s
 HEMIS_IMAGE_HOSTS=hemis.samdpi.uz                  # allowlist for photo downloads
 HEMIS_ALLOWED_STATUS_CODES=11                       # studentStatus codes allowed to log in (11 = O'qimoqda)
-# phase 7: teacher OAuth (URLs are examples, confirm the real ones)
+# phase 7: HEMIS OAuth for teachers and students (URLs are examples, confirm the real ones)
 HEMIS_OAUTH_CLIENT_ID=...
 HEMIS_OAUTH_CLIENT_SECRET=...
 HEMIS_OAUTH_REDIRECT_URI=http://localhost:8080/auth/callback
 HEMIS_TEACHER_AUTHORIZE_URL=https://hemis.samdpi.uz/oauth/authorize
 HEMIS_TEACHER_ACCESS_TOKEN_URL=https://hemis.samdpi.uz/oauth/access-token
 HEMIS_TEACHER_RESOURCE_OWNER_URL=https://hemis.samdpi.uz/oauth/api/user
+HEMIS_STUDENT_AUTHORIZE_URL=https://hemis.samdpi.uz/oauth/authorize          # students: own endpoints, same client + redirect URI
+HEMIS_STUDENT_ACCESS_TOKEN_URL=https://hemis.samdpi.uz/oauth/access-token
+HEMIS_STUDENT_RESOURCE_OWNER_URL=https://hemis.samdpi.uz/oauth/api/user
 HEMIS_TEACHER_AUTO_CREATE=true                      # create a teacher on first OAuth login if no linked user exists
 TRUSTED_PROXIES=                                    # reverse proxy CIDRs whose X-Forwarded-For is trusted (prod: compose network)
 ```
@@ -259,23 +262,13 @@ Endpoints:
 
 ## HEMIS integration (phase 6)
 
-Students never get a local password. They log in with their HEMIS credentials. Our backend verifies them against HEMIS, syncs the profile and opens OUR OWN session. HEMIS is the source of truth for student profile data.
+Students never get a local password. They sign in on HEMIS itself (OAuth); our backend then reads the profile, syncs it and opens OUR OWN session. HEMIS is the source of truth for student profile data.
 
 ### HEMIS API
 
 All responses use the envelope `{"success": bool, "error": string|null, "data": ..., "code": int}`. Treat a call as successful only if HTTP status is 200 AND `success == true`.
 
-**Login:** `POST {HEMIS_BASE_URL}/auth/login`
-
-```json
-// request (login is sent as a JSON NUMBER, parsed from the digits the user typed)
-{"login": 320261100667, "password": "..."}
-
-// response
-{"success": true, "error": null, "data": {"token": "<jwt>", "refresh_token": "<opaque>"}, "code": 200}
-```
-
-**Profile:** `GET {HEMIS_BASE_URL}/account/me` with `Authorization: Bearer <token>`. Response `data` shape (values anonymized):
+**Profile:** the student resource-owner call (`HEMIS_STUDENT_RESOURCE_OWNER_URL`) with `Authorization: Bearer <access_token>`, answering with the `account/me` shape. Response `data` shape (values anonymized):
 
 ```json
 {
@@ -335,26 +328,19 @@ Nested objects may be `null`. Decode defensively: a missing or null nested objec
 
 Fields managed only by us and never overwritten by sync: `is_active`, `role` of existing non-student users, `face_embedding` (except via re-enrollment below), `passport_number`, `groups.teacher_id`.
 
-### Login routing (single login form)
+### Login routing
 
-1. Look up a local user by `username` with `role IN ('admin','teacher')` and a non-null `password_hash`. If found, use local bcrypt auth. HEMIS is never called.
-2. Otherwise, if the login is all digits (`^\d+$`), use HEMIS auth.
-3. Otherwise, return "Login yoki parol noto'g'ri".
+The login form (username + password) is for admins, little admins and teachers only: local bcrypt auth, HEMIS is never called. Students sign in through HEMIS OAuth (below). A student who types a password on the form gets "Talabalar HEMIS orqali kirishi kerak". `DEV_STUDENT_PASSWORD_LOGIN` still lets a seeded student with a local password use the form (dev only, must be `false` in prod).
 
-Admin/teacher usernames must NOT be all digits (validated on create/update) so the two paths can never collide. Teachers can additionally use HEMIS OAuth (phase 7), which is a separate button and never goes through this form. `DEV_STUDENT_PASSWORD_LOGIN` adds a local-password path for students and must be `false` in prod.
+### HEMIS OAuth for students
 
-### HEMIS login flow
+Same authorization-code flow as for teachers (see "HEMIS OAuth for teachers"), with the same client (`HEMIS_OAUTH_CLIENT_ID/SECRET`) and the same `/auth/callback`, but its own endpoints: `HEMIS_STUDENT_AUTHORIZE_URL`, `HEMIS_STUDENT_ACCESS_TOKEN_URL`, `HEMIS_STUDENT_RESOURCE_OWNER_URL`. The login page button is a plain navigation to `/api/auth/hemis/student/start`.
 
-1. Rate limit (same limiter as local login).
-2. `POST /auth/login`. On HTTP 401/422 or `success=false`: return "Login yoki parol noto'g'ri" and audit `login_failed` (reason `hemis_invalid_credentials`). On timeout/5xx/network error: return "HEMIS tizimi vaqtincha javob bermayapti, keyinroq urinib ko'ring" and audit `login_failed` (reason `hemis_unavailable`).
-3. `GET /account/me` with the token.
-4. If `studentStatus.code` is not in `HEMIS_ALLOWED_STATUS_CODES`: reject with "Siz o'qiyotgan talabalar ro'yxatida emassiz" (audit `login_failed`, reason `hemis_status`).
-5. In ONE transaction: upsert faculty → upsert group → upsert user (by `hemis_id`). Audit `create` or `update` for the user (actor = the student, `changes` = changed fields only, passport fields masked).
-6. If an existing user is `is_active=false`, reject after the sync ("Hisobingiz bloklangan").
-7. Create our session, set `last_login_at`, audit `login`.
-8. If `face_embedding IS NULL` or `hemis_img_url` changed: enqueue face enrollment (see below). Login does NOT wait for it.
-
-The HEMIS password, token and refresh_token are never stored, never logged and never written to audit. They live only for the duration of the request. HTTP request/response bodies to HEMIS are never logged.
+- The `state` value starts with `s.` (student) or `t.` (teacher). The callback compares it with the httpOnly state cookie and reads the role from the cookie's prefix, so one callback serves both. Success redirects to `/student`, failure to `/login?error=<code>` (same codes as for teachers; a disabled student account gives `hemis_inactive`).
+- The resource-owner response is the student profile (the shape of HEMIS `account/me`, optionally wrapped in `{"data": ...}`) and uses the field mapping above. The username is `student_id_number` (falling back to the HEMIS `id`).
+- In ONE transaction: upsert faculty → upsert group → upsert user (by `hemis_id`; a seeded student without one is adopted by username). Audit `create`/`update` (actor = the student, passport fields masked), then create our session and audit `login` (method `hemis_oauth`).
+- If the photo URL is new, face enrollment runs in the background (below). Login does NOT wait for it.
+- The access token and the authorization code are never stored, logged or audited. A failed HEMIS call is audited as `login_failed` with a reason code and, for outages, a safe `detail` such as `status 503`.
 
 ### Face enrollment from the HEMIS photo
 

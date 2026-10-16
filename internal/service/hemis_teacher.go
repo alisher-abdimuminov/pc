@@ -89,6 +89,11 @@ func (s *AuthService) OAuthRecordFailure(ip string) { s.limiter.RecordFailure("o
 // Failures are *OAuthError (and are audited here).
 func (s *AuthService) TeacherLoginWithCode(ctx context.Context, code string, meta Actor) (*LoginResult, error) {
 	res, err := s.teacherLogin(ctx, code, meta)
+	return s.finishOAuth(ctx, res, err, meta)
+}
+
+// finishOAuth audits a failed OAuth sign-in (teacher or student) and normalises the error to *OAuthError.
+func (s *AuthService) finishOAuth(ctx context.Context, res *LoginResult, err error, meta Actor) (*LoginResult, error) {
 	var oe *OAuthError
 	switch {
 	case err == nil:

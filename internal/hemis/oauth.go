@@ -30,6 +30,14 @@ type TeacherOAuth interface {
 	TeacherProfile(ctx context.Context, accessToken string) (*TeacherProfile, error)
 }
 
+// StudentOAuth is the student sign-in side of HEMIS (mocked in tests). The resource-owner response is
+// the student profile, the same shape HEMIS gives for /account/me.
+type StudentOAuth interface {
+	AuthorizeURL(state string) string
+	ExchangeCode(ctx context.Context, code string) (accessToken string, err error)
+	StudentProfile(ctx context.Context, accessToken string) (*Profile, error)
+}
+
 // TeacherProfile is the normalised resource-owner response. Everything except Login is optional.
 type TeacherProfile struct {
 	Login          string
@@ -189,4 +197,56 @@ func (o *OAuth) TeacherProfile(ctx context.Context, accessToken string) (*Teache
 		return nil, fmt.Errorf("%w: no login in profile", ErrOAuthProfile)
 	}
 	return p, nil
+}
+
+// StudentProfile fetches the signed-in student. The profile may be wrapped in {"success":..,"data":{..}}.
+func (o *OAuth) StudentProfile(ctx context.Context, accessToken string) (*Profile, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.cfg.UserURL, nil)
+	if err != nil {
+		return nil, ErrOAuthProfile
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	raw, err := o.call(req, ErrOAuthProfile)
+	if err != nil {
+		return nil, err
+	}
+	// HEMIS answers with a short summary at the top level (login, id, passport, picture_full...) and the
+	// full student record under "data". Some deployments return only one of the two.
+	var top struct {
+		meJSON
+		Login       flex    `json:"login"`
+		PictureFull flex    `json:"picture_full"`
+		Name        flex    `json:"name"`
+		Firstname   flex    `json:"firstname"`
+		Surname     flex    `json:"surname"`
+		Patronymic  flex    `json:"patronymic"`
+		Data        *meJSON `json:"data"`
+	}
+	if json.Unmarshal(raw, &top) != nil {
+		return nil, fmt.Errorf("%w: unreadable response", ErrOAuthProfile)
+	}
+	m := top.meJSON
+	if top.Data != nil {
+		m = top.Data.withFallback(top.meJSON)
+	}
+	first := func(vals ...flex) flex {
+		for _, v := range vals {
+			if v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	m.FirstName = first(m.FirstName, top.Firstname)
+	m.SecondName = first(m.SecondName, top.Surname)
+	m.ThirdName = first(m.ThirdName, top.Patronymic)
+	m.FullName = first(m.FullName, top.Name)
+	m.Image = first(m.Image, top.PictureFull)
+	m.StudentID = first(m.StudentID, top.Login)
+	p := m.profile()
+	if p.HemisID == 0 {
+		return nil, fmt.Errorf("%w: profile has no id", ErrOAuthProfile)
+	}
+	return &p, nil
 }

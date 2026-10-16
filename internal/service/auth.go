@@ -18,7 +18,6 @@ import (
 	"pc/internal/auth"
 	"pc/internal/config"
 	"pc/internal/db"
-	"pc/internal/hemis"
 )
 
 // AccountInactiveMessage is shown to a deactivated user (also right after a face-mismatch block).
@@ -34,7 +33,6 @@ var (
 	errRateLimited     = apperr.New(http.StatusTooManyRequests, "too_many_requests", "Juda ko'p urinish. Bir necha daqiqadan so'ng qayta urinib ko'ring")
 	errStudentLogin    = apperr.New(http.StatusForbidden, "student_login_unavailable", "Talabalar HEMIS orqali kirishi kerak")
 	errAccountInactive = apperr.New(http.StatusForbidden, "account_inactive", AccountInactiveMessage)
-	errHemisDown       = apperr.New(http.StatusServiceUnavailable, "hemis_unavailable", hemis.UnavailableMessage)
 )
 
 type AuthService struct {
@@ -44,23 +42,16 @@ type AuthService struct {
 	// dummyHash keeps timing similar for unknown usernames.
 	dummyHash string
 
-	hemis  hemis.Client // nil when HEMIS_BASE_URL is not configured
-	photos *HemisPhotoService
-	runBG  func(func())
-	log    *zap.Logger
+	runBG func(func())
+	log   *zap.Logger
 
-	teacher *teacherOAuth // nil when HEMIS OAuth is not configured
+	teacher *teacherOAuth // nil when HEMIS teacher OAuth is not configured
+	student *studentOAuth // nil when HEMIS student OAuth is not configured
 }
 
 func NewAuthService(pool *pgxpool.Pool, cfg *config.Config, limiter *auth.LoginLimiter) *AuthService {
 	h, _ := auth.HashPassword("dummy-password-for-timing")
 	return &AuthService{pool: pool, cfg: cfg, limiter: limiter, dummyHash: h, runBG: func(f func()) { go f() }, log: zap.NewNop()}
-}
-
-// WithHemis enables student login through HEMIS.
-func (s *AuthService) WithHemis(c hemis.Client, photos *HemisPhotoService, log *zap.Logger) *AuthService {
-	s.hemis, s.photos, s.log = c, photos, log
-	return s
 }
 
 // WithBackground replaces how post-login work (photo sync) is run; tests run it inline.
@@ -81,8 +72,8 @@ func limiterKey(ip, username string) string { return ip + "|" + username }
 //
 // Which system checks the password is decided by who the user is:
 //   - admins and teachers: the local password;
-//   - students: HEMIS (their HEMIS password is forwarded, never stored). With
-//     DEV_STUDENT_PASSWORD_LOGIN a student that has a local password may use it instead (dev only).
+//   - students sign in through HEMIS OAuth only. With DEV_STUDENT_PASSWORD_LOGIN a student that has a
+//     local password may use it on this form (dev only).
 func (s *AuthService) Login(ctx context.Context, username, password string, meta Actor) (*LoginResult, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" || password == "" {
@@ -110,20 +101,16 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 		return s.finishLocal(ctx, key, username, user, localOK, meta)
 	case found && localOK && s.cfg.DevStudentPasswordLogin:
 		return s.finishLocal(ctx, key, username, user, true, meta)
-	case s.hemis != nil:
-		return s.hemisLogin(ctx, key, username, password, !found, meta)
-	case found && localOK: // a student with the right password, but no HEMIS and no dev switch
+	case found && localOK: // a student with the right password, but no dev switch: students use HEMIS
 		return s.fail(ctx, key, username, "student_login_disabled", errStudentLogin, meta)
 	default:
 		return s.fail(ctx, key, username, "invalid_credentials", errBadCredentials, meta)
 	}
 }
 
-func (s *AuthService) fail(ctx context.Context, key, username, reason string, err error, meta Actor, detail ...string) (*LoginResult, error) {
-	if reason != "hemis_unavailable" { // an outage is not the user's fault: do not count it against them
-		s.limiter.RecordFailure(key)
-	}
-	s.auditFailure(ctx, username, reason, meta, detail...)
+func (s *AuthService) fail(ctx context.Context, key, username, reason string, err error, meta Actor) (*LoginResult, error) {
+	s.limiter.RecordFailure(key)
+	s.auditFailure(ctx, username, reason, meta)
 	return nil, err
 }
 

@@ -43,12 +43,26 @@ type Config struct {
 	TeacherAccessTokenURL   string
 	TeacherResourceOwnerURL string
 	TeacherAutoCreate       bool
+	// Student sign-in uses the same client and redirect URI, with its own three endpoints.
+	StudentAuthorizeURL     string
+	StudentAccessTokenURL   string
+	StudentResourceOwnerURL string
 }
 
-// OAuthEnabled reports whether teacher sign-in through HEMIS is configured.
+// OAuthEnabled reports whether any part of the HEMIS OAuth sign-in is configured.
 func (c *Config) OAuthEnabled() bool {
 	return c.OAuthClientID != "" || c.OAuthClientSecret != "" || c.OAuthRedirectURI != "" ||
-		c.TeacherAuthorizeURL != "" || c.TeacherAccessTokenURL != "" || c.TeacherResourceOwnerURL != ""
+		c.TeacherOAuthEnabled() || c.StudentOAuthEnabled()
+}
+
+// TeacherOAuthEnabled reports whether the teacher endpoints are configured.
+func (c *Config) TeacherOAuthEnabled() bool {
+	return c.TeacherAuthorizeURL != "" || c.TeacherAccessTokenURL != "" || c.TeacherResourceOwnerURL != ""
+}
+
+// StudentOAuthEnabled reports whether the student endpoints are configured.
+func (c *Config) StudentOAuthEnabled() bool {
+	return c.StudentAuthorizeURL != "" || c.StudentAccessTokenURL != "" || c.StudentResourceOwnerURL != ""
 }
 
 func (c *Config) IsProd() bool { return c.AppEnv == "prod" }
@@ -110,6 +124,9 @@ func Load() (*Config, error) {
 		TeacherAccessTokenURL:   str("HEMIS_TEACHER_ACCESS_TOKEN_URL", ""),
 		TeacherResourceOwnerURL: str("HEMIS_TEACHER_RESOURCE_OWNER_URL", ""),
 		TeacherAutoCreate:       boolean("HEMIS_TEACHER_AUTO_CREATE", true),
+		StudentAuthorizeURL:     str("HEMIS_STUDENT_AUTHORIZE_URL", ""),
+		StudentAccessTokenURL:   str("HEMIS_STUDENT_ACCESS_TOKEN_URL", ""),
+		StudentResourceOwnerURL: str("HEMIS_STUDENT_RESOURCE_OWNER_URL", ""),
 	}
 	for _, h := range strings.Split(str("HEMIS_IMAGE_HOSTS", ""), ",") {
 		if h = strings.TrimSpace(h); h != "" {
@@ -189,11 +206,24 @@ func Load() (*Config, error) {
 	}
 
 	if c.OAuthEnabled() {
-		for _, r := range []struct{ name, v string }{
+		required := []struct{ name, v string }{
 			{"HEMIS_OAUTH_CLIENT_ID", c.OAuthClientID}, {"HEMIS_OAUTH_CLIENT_SECRET", c.OAuthClientSecret},
-			{"HEMIS_OAUTH_REDIRECT_URI", c.OAuthRedirectURI}, {"HEMIS_TEACHER_AUTHORIZE_URL", c.TeacherAuthorizeURL},
-			{"HEMIS_TEACHER_ACCESS_TOKEN_URL", c.TeacherAccessTokenURL}, {"HEMIS_TEACHER_RESOURCE_OWNER_URL", c.TeacherResourceOwnerURL},
-		} {
+			{"HEMIS_OAUTH_REDIRECT_URI", c.OAuthRedirectURI},
+		}
+		// Each side is all-or-nothing, and at least one side must be set.
+		if c.TeacherOAuthEnabled() || !c.StudentOAuthEnabled() {
+			required = append(required,
+				struct{ name, v string }{"HEMIS_TEACHER_AUTHORIZE_URL", c.TeacherAuthorizeURL},
+				struct{ name, v string }{"HEMIS_TEACHER_ACCESS_TOKEN_URL", c.TeacherAccessTokenURL},
+				struct{ name, v string }{"HEMIS_TEACHER_RESOURCE_OWNER_URL", c.TeacherResourceOwnerURL})
+		}
+		if c.StudentOAuthEnabled() {
+			required = append(required,
+				struct{ name, v string }{"HEMIS_STUDENT_AUTHORIZE_URL", c.StudentAuthorizeURL},
+				struct{ name, v string }{"HEMIS_STUDENT_ACCESS_TOKEN_URL", c.StudentAccessTokenURL},
+				struct{ name, v string }{"HEMIS_STUDENT_RESOURCE_OWNER_URL", c.StudentResourceOwnerURL})
+		}
+		for _, r := range required {
 			if r.v == "" {
 				errs = append(errs, r.name+": required when HEMIS OAuth is enabled")
 			}

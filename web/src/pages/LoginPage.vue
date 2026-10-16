@@ -31,8 +31,9 @@ const router = useRouter()
 const route = useRoute()
 const blocked = route.query.reason === 'inactive'
 
-// ---- HEMIS sign-in for teachers: a plain full-page navigation, the server does the OAuth dance ----
-const HEMIS_START = '/api/auth/hemis/teacher/start'
+// ---- HEMIS sign-in for students and teachers: a plain full-page navigation, the server does the OAuth dance ----
+const HEMIS_STUDENT_START = '/api/auth/hemis/student/start'
+const HEMIS_TEACHER_START = '/api/auth/hemis/teacher/start'
 const hemisLoading = ref(false)
 const oauthCode = typeof route.query.error === 'string' ? route.query.error : ''
 const oauthError = ref(oauthCode ? (uz.login.errors[oauthCode] ?? uz.common.unexpectedError) : '')
@@ -111,9 +112,21 @@ const onSubmit = handleSubmit(async (values) => {
         <p v-if="oauthError" class="text-destructive mb-3 text-sm" role="alert" data-testid="oauth-error">{{ oauthError }}</p>
         <Button
           as="a"
-          :href="HEMIS_START"
-          variant="outline"
+          :href="HEMIS_STUDENT_START"
           class="w-full"
+          data-testid="hemis-student"
+          :aria-disabled="hemisLoading"
+          :class="hemisLoading && 'pointer-events-none opacity-60'"
+          @click="hemisLoading = true"
+        >
+          <GraduationCap class="size-4" aria-hidden="true" />
+          {{ hemisLoading ? uz.login.hemisRedirecting : uz.login.hemisStudent }}
+        </Button>
+        <Button
+          as="a"
+          :href="HEMIS_TEACHER_START"
+          variant="outline"
+          class="mt-2 w-full"
           data-testid="hemis-teacher"
           :aria-disabled="hemisLoading"
           :class="hemisLoading && 'pointer-events-none opacity-60'"

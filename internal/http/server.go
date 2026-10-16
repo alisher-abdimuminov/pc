@@ -39,7 +39,6 @@ type Deps struct {
 	// Optional overrides, used by tests.
 	Face  face.Service
 	Clock func() time.Time
-	Hemis hemis.Client
 	// HemisGroups replaces the HEMIS group list source (tests).
 	HemisGroups hemis.GroupSource
 	// HemisFaculties replaces the HEMIS faculty list source (tests).
@@ -48,8 +47,10 @@ type Deps struct {
 	RunBackground func(func())
 	// HemisPhotoFetch replaces the HEMIS photo downloader (tests).
 	HemisPhotoFetch hemis.PhotoFetcher
-	// TeacherOAuth replaces the HEMIS OAuth client (tests).
+	// TeacherOAuth replaces the HEMIS teacher OAuth client (tests).
 	TeacherOAuth hemis.TeacherOAuth
+	// StudentOAuth replaces the HEMIS student OAuth client (tests).
+	StudentOAuth hemis.StudentOAuth
 }
 
 func NewServer(d Deps) *fiber.App {
@@ -86,37 +87,40 @@ func NewServer(d Deps) *fiber.App {
 	photoFetch := d.HemisPhotoFetch
 	if photoFetch == nil {
 		hosts := append([]string{}, d.Cfg.HemisImageHosts...)
-		for _, raw := range []string{d.Cfg.TeacherResourceOwnerURL, d.Cfg.TeacherAuthorizeURL} {
+		for _, raw := range []string{d.Cfg.TeacherResourceOwnerURL, d.Cfg.TeacherAuthorizeURL, d.Cfg.StudentResourceOwnerURL, d.Cfg.StudentAuthorizeURL} {
 			if u, err := url.Parse(raw); err == nil && u.Host != "" {
 				hosts = append(hosts, u.Host)
 			}
 		}
 		photoFetch = hemis.NewPhotoFetcher(d.Cfg.HemisBaseURL, hosts, d.Cfg.HemisTimeout)
 	}
-	hemisClient := d.Hemis
-	if hemisClient == nil && d.Cfg.HemisBaseURL != "" {
-		hemisClient = hemis.New(d.Cfg.HemisBaseURL, d.Cfg.HemisTimeout)
-	}
-	if hemisClient != nil {
-		photos := service.NewHemisPhotoService(d.Pool, enrollSvc, photoFetch, d.Cfg.HemisTimeout, d.Log)
-		authSvc.WithHemis(hemisClient, photos, d.Log)
-	} else {
-		d.Log.Info("HEMIS_BASE_URL is not set: student login through HEMIS is disabled")
-	}
 	if d.RunBackground != nil {
 		authSvc.WithBackground(d.RunBackground)
 	}
-	oauth := d.TeacherOAuth
-	if oauth == nil && d.Cfg.OAuthEnabled() {
-		oauth = hemis.NewOAuth(hemis.OAuthConfig{
+	newOAuth := func(authorize, token, user string) *hemis.OAuth {
+		return hemis.NewOAuth(hemis.OAuthConfig{
 			ClientID: d.Cfg.OAuthClientID, ClientSecret: d.Cfg.OAuthClientSecret, RedirectURI: d.Cfg.OAuthRedirectURI,
-			AuthorizeURL: d.Cfg.TeacherAuthorizeURL, TokenURL: d.Cfg.TeacherAccessTokenURL, UserURL: d.Cfg.TeacherResourceOwnerURL,
+			AuthorizeURL: authorize, TokenURL: token, UserURL: user,
 		}, hemis.OAuthTimeout)
 	}
-	if oauth != nil {
-		authSvc.WithTeacherOAuth(oauth, photoFetch, store, d.Cfg.TeacherAutoCreate)
+	teacherOAuth := d.TeacherOAuth
+	if teacherOAuth == nil && d.Cfg.TeacherOAuthEnabled() {
+		teacherOAuth = newOAuth(d.Cfg.TeacherAuthorizeURL, d.Cfg.TeacherAccessTokenURL, d.Cfg.TeacherResourceOwnerURL)
+	}
+	if teacherOAuth != nil {
+		authSvc.WithTeacherOAuth(teacherOAuth, photoFetch, store, d.Cfg.TeacherAutoCreate)
 	} else {
-		d.Log.Info("HEMIS OAuth is not configured: teacher sign-in through HEMIS is disabled")
+		d.Log.Info("HEMIS teacher OAuth is not configured: teacher sign-in through HEMIS is disabled")
+	}
+	studentOAuth := d.StudentOAuth
+	if studentOAuth == nil && d.Cfg.StudentOAuthEnabled() {
+		studentOAuth = newOAuth(d.Cfg.StudentAuthorizeURL, d.Cfg.StudentAccessTokenURL, d.Cfg.StudentResourceOwnerURL)
+	}
+	if studentOAuth != nil {
+		photos := service.NewHemisPhotoService(d.Pool, enrollSvc, photoFetch, d.Cfg.HemisTimeout, d.Log)
+		authSvc.WithStudentOAuth(studentOAuth, photos, d.Log)
+	} else {
+		d.Log.Info("HEMIS student OAuth is not configured: student sign-in through HEMIS is disabled")
 	}
 
 	var groupSource hemis.GroupSource = d.HemisGroups

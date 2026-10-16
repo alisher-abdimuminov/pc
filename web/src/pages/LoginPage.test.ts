@@ -42,6 +42,16 @@ describe('login page', () => {
     expect(input.attributes('type')).toBe('password')
   })
 
+  describe('HEMIS sign-in for students', () => {
+    it('is a plain link to the student start endpoint', async () => {
+      const w = await mountAt('/login')
+      const btn = w.get('[data-testid="hemis-student"]')
+      expect(btn.element.tagName).toBe('A')
+      expect(btn.attributes('href')).toBe('/api/auth/hemis/student/start')
+      expect(btn.text()).toBe('HEMIS orqali kirish (Talaba)')
+    })
+  })
+
   describe('HEMIS sign-in for teachers', () => {
     it('is a plain link to the server start endpoint, not a fetch', async () => {
       const w = await mountAt('/login')

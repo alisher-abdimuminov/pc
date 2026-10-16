@@ -72,6 +72,23 @@ func TestOAuthConfig(t *testing.T) {
 	}
 }
 
+func TestStudentOAuthConfig(t *testing.T) {
+	setBase(t)
+	t.Setenv("HEMIS_OAUTH_CLIENT_ID", "cid")
+	t.Setenv("HEMIS_OAUTH_CLIENT_SECRET", "s3cret")
+	t.Setenv("HEMIS_OAUTH_REDIRECT_URI", "http://localhost:8080/auth/callback")
+	t.Setenv("HEMIS_STUDENT_AUTHORIZE_URL", "http://h/s/authorize")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "HEMIS_STUDENT_ACCESS_TOKEN_URL") {
+		t.Fatalf("a half-set student side must be refused: %v", err)
+	}
+	t.Setenv("HEMIS_STUDENT_ACCESS_TOKEN_URL", "http://h/s/token")
+	t.Setenv("HEMIS_STUDENT_RESOURCE_OWNER_URL", "http://h/s/user")
+	c, err := Load() // students only: the teacher side may stay empty
+	if err != nil || !c.StudentOAuthEnabled() || c.TeacherOAuthEnabled() {
+		t.Fatalf("student-only OAuth should load: %v", err)
+	}
+}
+
 func TestTrustedProxies(t *testing.T) {
 	setBase(t)
 	if c, err := Load(); err != nil || len(c.TrustedProxies) != 0 {
