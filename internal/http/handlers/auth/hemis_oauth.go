@@ -77,14 +77,7 @@ func (h *Handler) OAuthCallback(c *fiber.Ctx) error {
 	want := c.Cookies(stateCookie)
 	c.Cookie(h.stateCookie("", time.Unix(0, 0))) // single use, whatever happens next
 
-	fail := func(code string) error {
-		h.auth.OAuthRecordFailure(m.IP)
-		return loginError(c, code)
-	}
-	if !h.auth.OAuthAllowed(m.IP) {
-		h.auth.OAuthFailed(c.Context(), service.OAuthErrRateLimited, m)
-		return loginError(c, service.OAuthErrRateLimited)
-	}
+	fail := func(code string) error { return loginError(c, code) }
 
 	got := c.Query("state")
 	if want == "" || got == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {

@@ -644,8 +644,6 @@ export const uz = {
         "Siz tizimda ro'yxatdan o'tmagansiz. Tizim adminlariga murojaat qiling.",
       hemis_unavailable:
         "HEMIS tizimi vaqtincha javob bermayapti. Birozdan so'ng qayta urinib ko'ring.",
-      hemis_rate_limited:
-        "Juda ko'p urinish. Bir necha daqiqadan so'ng qayta urinib ko'ring.",
       hemis_internal: "Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.",
     } as Record<string, string>,
   },

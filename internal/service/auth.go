@@ -23,22 +23,15 @@ import (
 // AccountInactiveMessage is shown to a deactivated user (also right after a face-mismatch block).
 const AccountInactiveMessage = "Hisobingiz faol emas. Tizim adminlariga murojaat qiling."
 
-const (
-	LoginAttempts = 5
-	LoginWindow   = 5 * time.Minute
-)
-
 var (
 	errBadCredentials  = apperr.New(http.StatusUnauthorized, "invalid_credentials", "Login yoki parol noto'g'ri")
-	errRateLimited     = apperr.New(http.StatusTooManyRequests, "too_many_requests", "Juda ko'p urinish. Bir necha daqiqadan so'ng qayta urinib ko'ring")
 	errStudentLogin    = apperr.New(http.StatusForbidden, "student_login_unavailable", "Talabalar HEMIS orqali kirishi kerak")
 	errAccountInactive = apperr.New(http.StatusForbidden, "account_inactive", AccountInactiveMessage)
 )
 
 type AuthService struct {
-	pool    *pgxpool.Pool
-	cfg     *config.Config
-	limiter *auth.LoginLimiter
+	pool *pgxpool.Pool
+	cfg  *config.Config
 	// dummyHash keeps timing similar for unknown usernames.
 	dummyHash string
 
@@ -49,9 +42,9 @@ type AuthService struct {
 	student *studentOAuth // nil when HEMIS student OAuth is not configured
 }
 
-func NewAuthService(pool *pgxpool.Pool, cfg *config.Config, limiter *auth.LoginLimiter) *AuthService {
+func NewAuthService(pool *pgxpool.Pool, cfg *config.Config) *AuthService {
 	h, _ := auth.HashPassword("dummy-password-for-timing")
-	return &AuthService{pool: pool, cfg: cfg, limiter: limiter, dummyHash: h, runBG: func(f func()) { go f() }, log: zap.NewNop()}
+	return &AuthService{pool: pool, cfg: cfg, dummyHash: h, runBG: func(f func()) { go f() }, log: zap.NewNop()}
 }
 
 // WithBackground replaces how post-login work (photo sync) is run; tests run it inline.
@@ -66,8 +59,6 @@ type LoginResult struct {
 	Expires time.Time
 }
 
-func limiterKey(ip, username string) string { return ip + "|" + username }
-
 // Login verifies credentials, creates a session and audits the outcome.
 //
 // Which system checks the password is decided by who the user is:
@@ -79,12 +70,6 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	if username == "" || password == "" {
 		return nil, apperr.Validation("Login va parolni kiriting", map[string]string{"username": "Majburiy maydon", "password": "Majburiy maydon"})
 	}
-	key := limiterKey(meta.IP, username)
-	if !s.limiter.Allowed(key) {
-		s.auditFailure(ctx, username, "rate_limited", meta)
-		return nil, errRateLimited
-	}
-
 	user, err := db.New(s.pool).GetUserByUsername(ctx, pgtype.Text{String: username, Valid: true})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
@@ -98,28 +83,27 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 
 	switch {
 	case found && user.Role != "student":
-		return s.finishLocal(ctx, key, username, user, localOK, meta)
+		return s.finishLocal(ctx, username, user, localOK, meta)
 	case found && localOK && s.cfg.DevStudentPasswordLogin:
-		return s.finishLocal(ctx, key, username, user, true, meta)
+		return s.finishLocal(ctx, username, user, true, meta)
 	case found && localOK: // a student with the right password, but no dev switch: students use HEMIS
-		return s.fail(ctx, key, username, "student_login_disabled", errStudentLogin, meta)
+		return s.fail(ctx, username, "student_login_disabled", errStudentLogin, meta)
 	default:
-		return s.fail(ctx, key, username, "invalid_credentials", errBadCredentials, meta)
+		return s.fail(ctx, username, "invalid_credentials", errBadCredentials, meta)
 	}
 }
 
-func (s *AuthService) fail(ctx context.Context, key, username, reason string, err error, meta Actor) (*LoginResult, error) {
-	s.limiter.RecordFailure(key)
+func (s *AuthService) fail(ctx context.Context, username, reason string, err error, meta Actor) (*LoginResult, error) {
 	s.auditFailure(ctx, username, reason, meta)
 	return nil, err
 }
 
-func (s *AuthService) finishLocal(ctx context.Context, key, username string, user db.User, passOK bool, meta Actor) (*LoginResult, error) {
+func (s *AuthService) finishLocal(ctx context.Context, username string, user db.User, passOK bool, meta Actor) (*LoginResult, error) {
 	switch {
 	case !passOK:
-		return s.fail(ctx, key, username, "invalid_credentials", errBadCredentials, meta)
+		return s.fail(ctx, username, "invalid_credentials", errBadCredentials, meta)
 	case !user.IsActive:
-		return s.fail(ctx, key, username, "inactive", errAccountInactive, meta)
+		return s.fail(ctx, username, "inactive", errAccountInactive, meta)
 	}
 	var raw string
 	var expires time.Time
@@ -130,7 +114,6 @@ func (s *AuthService) finishLocal(ctx context.Context, key, username string, use
 	if err != nil {
 		return nil, err
 	}
-	s.limiter.Reset(key)
 	return &LoginResult{Token: raw, User: user, Expires: expires}, nil
 }
 

@@ -225,26 +225,6 @@ func TestStudentLoginOnlyInDevMode(t *testing.T) {
 	}
 }
 
-func TestLoginRateLimit(t *testing.T) {
-	e := newEnv(t)
-	e.user("admin1", "admin", false)
-	for i := 0; i < service.LoginAttempts; i++ {
-		if resp, _, _ := e.login("admin1", "wrong-wrong"); resp.StatusCode != 401 {
-			t.Fatalf("attempt %d: %d", i, resp.StatusCode)
-		}
-	}
-	// Even the right password is refused once the limit is hit.
-	resp, out, _ := e.login("admin1", testPass)
-	if resp.StatusCode != 429 || errCode(t, out) != "too_many_requests" {
-		t.Fatalf("expected 429, got %d %s", resp.StatusCode, out)
-	}
-	// A different username from the same IP is a separate bucket.
-	e.user("admin2", "admin", false)
-	if resp, _, _ := e.login("admin2", testPass); resp.StatusCode != 200 {
-		t.Fatalf("other username must not be blocked: %d", resp.StatusCode)
-	}
-}
-
 func TestSessionMiddleware(t *testing.T) {
 	e := newEnv(t)
 	u := e.user("admin1", "admin", false)

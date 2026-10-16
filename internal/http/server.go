@@ -16,7 +16,6 @@ import (
 	"go.uber.org/zap"
 
 	"pc/internal/apperr"
-	"pc/internal/auth"
 	"pc/internal/config"
 	"pc/internal/db"
 	"pc/internal/face"
@@ -59,8 +58,7 @@ func NewServer(d Deps) *fiber.App {
 		DisableStartupMessage: true,
 		BodyLimit:             25 * 1024 * 1024,
 	}
-	// Behind the reverse proxy c.IP() must be the real client, not the proxy: the login limiter and the
-	// audit log depend on it. X-Forwarded-For is believed only when the peer is a trusted proxy.
+	// Behind the reverse proxy c.IP() must be the real client, not the proxy: the audit log depends on it. X-Forwarded-For is believed only when the peer is a trusted proxy.
 	if len(d.Cfg.TrustedProxies) > 0 {
 		fcfg.EnableTrustedProxyCheck = true
 		fcfg.TrustedProxies = d.Cfg.TrustedProxies
@@ -74,7 +72,6 @@ func NewServer(d Deps) *fiber.App {
 
 	q := db.New(d.Pool)
 	requireAuth := middleware.RequireAuth(q)
-	limiter := auth.NewLoginLimiter(service.LoginAttempts, service.LoginWindow)
 
 	store := storage.NewLocal(d.Cfg.UploadDir)
 	var faceSvc face.Service = d.Face
@@ -83,7 +80,7 @@ func NewServer(d Deps) *fiber.App {
 	}
 	enrollSvc := service.NewEnrollmentService(d.Pool, store, faceSvc)
 
-	authSvc := service.NewAuthService(d.Pool, d.Cfg, limiter)
+	authSvc := service.NewAuthService(d.Pool, d.Cfg)
 	photoFetch := d.HemisPhotoFetch
 	if photoFetch == nil {
 		hosts := append([]string{}, d.Cfg.HemisImageHosts...)

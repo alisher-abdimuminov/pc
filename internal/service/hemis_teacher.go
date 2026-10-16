@@ -31,7 +31,6 @@ const (
 	OAuthErrInactive      = "hemis_inactive"
 	OAuthErrNotRegistered = "hemis_not_registered"
 	OAuthErrUnavailable   = "hemis_unavailable"
-	OAuthErrRateLimited   = "hemis_rate_limited"
 	OAuthErrInternal      = "hemis_internal"
 )
 
@@ -77,12 +76,6 @@ func (s *AuthService) OAuthFailed(ctx context.Context, reason string, meta Actor
 		IP:    meta.IP, UserAgent: meta.UserAgent,
 	})
 }
-
-// OAuthAllowed rate limits the callback per IP.
-func (s *AuthService) OAuthAllowed(ip string) bool { return s.limiter.Allowed("oauth|" + ip) }
-
-// OAuthRecordFailure counts a failure against the caller's IP.
-func (s *AuthService) OAuthRecordFailure(ip string) { s.limiter.RecordFailure("oauth|" + ip) }
 
 // TeacherLoginWithCode finishes the authorization-code flow: exchange the code, read the profile,
 // find or create the teacher, sync their fields and open our own session.
@@ -143,7 +136,6 @@ func (s *AuthService) teacherLogin(ctx context.Context, code string, meta Actor)
 	if err != nil {
 		return nil, err
 	}
-	s.limiter.Reset("oauth|" + meta.IP)
 
 	// The photo comes after the commit and never blocks the login.
 	if prof.PictureURL != "" {

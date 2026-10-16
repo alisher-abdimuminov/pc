@@ -444,18 +444,6 @@ func fieldsOf(fs []zap.Field) []any {
 	return out
 }
 
-func TestOAuthCallbackIsRateLimitedPerIP(t *testing.T) {
-	o := newOAuthEnv(t)
-	for i := 0; i < 5; i++ {
-		o.callback("code=x&state=bad", "")
-	}
-	state, _ := o.start()
-	loc, session := o.callback("code="+oauthCode+"&state="+state, state)
-	if o.failure(loc) != "hemis_rate_limited" || session != "" {
-		t.Fatalf("expected a rate limit, got %q", loc)
-	}
-}
-
 func TestOAuthDisabledWithoutConfig(t *testing.T) {
 	e := newEnv(t)
 	resp, _ := e.do("GET", "/api/auth/hemis/teacher/start", "", "")

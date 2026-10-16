@@ -97,7 +97,6 @@ func (s *AuthService) studentLogin(ctx context.Context, code string, meta Actor)
 	case err != nil:
 		return nil, err
 	}
-	s.limiter.Reset("oauth|" + meta.IP)
 
 	if st.photos != nil && prof.ImageURL != "" {
 		uid, url := user.ID, prof.ImageURL

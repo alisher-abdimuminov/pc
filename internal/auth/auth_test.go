@@ -3,7 +3,6 @@ package auth
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestGeneratePassword(t *testing.T) {
@@ -43,32 +42,5 @@ func TestTokenHash(t *testing.T) {
 	}
 	if len(raw) < 43 || hash != HashToken(raw) || hash == raw || len(hash) != 64 {
 		t.Fatalf("bad token: %q %q", raw, hash)
-	}
-}
-
-func TestLoginLimiter(t *testing.T) {
-	l := NewLoginLimiter(5, 5*time.Minute)
-	now := time.Now()
-	l.now = func() time.Time { return now }
-	for i := 0; i < 5; i++ {
-		if !l.Allowed("k") {
-			t.Fatalf("blocked too early at %d", i)
-		}
-		l.RecordFailure("k")
-	}
-	if l.Allowed("k") {
-		t.Fatal("should be blocked after 5 failures")
-	}
-	if !l.Allowed("other") {
-		t.Fatal("other key must be independent")
-	}
-	now = now.Add(5*time.Minute + time.Second)
-	if !l.Allowed("k") {
-		t.Fatal("window should have expired")
-	}
-	l.RecordFailure("k")
-	l.Reset("k")
-	if !l.Allowed("k") {
-		t.Fatal("reset should clear")
 	}
 }
