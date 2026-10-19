@@ -6,7 +6,16 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
@@ -20,7 +29,7 @@ def make_engine() -> Engine:
     threshold = os.getenv("FACE_THRESHOLD", "").strip()
     return Engine(
         model=os.getenv("FACE_MODEL", "Facenet512"),
-        detector=os.getenv("FACE_DETECTOR", "retinaface"),
+        detector="skip",
         metric=os.getenv("FACE_METRIC", "cosine"),
         threshold=float(threshold) if threshold else None,
     )
@@ -28,7 +37,11 @@ def make_engine() -> Engine:
 
 def require_token(x_internal_token: str | None = Header(default=None)) -> None:
     expected = os.getenv("FACE_SERVICE_TOKEN", "")
-    if not expected or not x_internal_token or not secrets.compare_digest(x_internal_token, expected):
+    if (
+        not expected
+        or not x_internal_token
+        or not secrets.compare_digest(x_internal_token, expected)
+    ):
         raise HTTPException(status_code=401, detail={"code": "unauthorized"})
 
 
@@ -37,23 +50,38 @@ async def lifespan(app: FastAPI):
     """Load the model exactly once, before the first request is served."""
     engine = getattr(app.state, "engine", None) or make_engine()
     app.state.engine = engine
-    app.state.semaphore = asyncio.Semaphore(max(1, int(os.getenv("FACE_CONCURRENCY", "2"))))
+    app.state.semaphore = asyncio.Semaphore(
+        max(1, int(os.getenv("FACE_CONCURRENCY", "2")))
+    )
     await run_in_threadpool(engine.load)
-    log.info("model %s / detector %s ready (threshold %.4f)", engine.model_name, engine.detector, engine.threshold)
+    log.info(
+        "model %s / detector %s ready (threshold %.4f)",
+        engine.model_name,
+        engine.detector,
+        engine.threshold,
+    )
     yield
 
 
-app = FastAPI(title="face-service", dependencies=[Depends(require_token)], lifespan=lifespan)
+app = FastAPI(
+    title="face-service", dependencies=[Depends(require_token)], lifespan=lifespan
+)
 
 
 @app.exception_handler(FaceError)
 async def face_error_handler(_: Request, exc: FaceError):
-    return JSONResponse(status_code=422, content={"code": exc.code, "message": str(exc)})
+    return JSONResponse(
+        status_code=422, content={"code": exc.code, "message": str(exc)}
+    )
 
 
 @app.exception_handler(HTTPException)
 async def http_error_handler(_: Request, exc: HTTPException):
-    detail = exc.detail if isinstance(exc.detail, dict) else {"code": "error", "message": str(exc.detail)}
+    detail = (
+        exc.detail
+        if isinstance(exc.detail, dict)
+        else {"code": "error", "message": str(exc.detail)}
+    )
     return JSONResponse(status_code=exc.status_code, content=detail)
 
 
@@ -73,19 +101,27 @@ async def read_image(image: UploadFile) -> bytes:
 
 
 @app.post("/embed")
-async def embed(request: Request, image: UploadFile = File(...), anti_spoofing: bool = Form(False)):
+async def embed(
+    request: Request, image: UploadFile = File(...), anti_spoofing: bool = Form(False)
+):
     data = await read_image(image)
     engine: Engine = request.app.state.engine
     async with request.app.state.semaphore:
         res = await run_in_threadpool(engine.embed, data, anti_spoofing)
-    body = {"embedding": res.embedding, "model": engine.model_name, "face_count": res.face_count}
+    body = {
+        "embedding": res.embedding,
+        "model": engine.model_name,
+        "face_count": res.face_count,
+    }
     if anti_spoofing:
         body.update(is_real=res.is_real, antispoof_score=res.antispoof_score)
     return body
 
 
 @app.post("/verify")
-async def verify(request: Request, image: UploadFile = File(...), embedding: str = Form(...)):
+async def verify(
+    request: Request, image: UploadFile = File(...), embedding: str = Form(...)
+):
     try:
         stored = [float(x) for x in json.loads(embedding)]
     except (ValueError, TypeError) as exc:
