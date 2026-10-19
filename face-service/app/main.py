@@ -29,7 +29,7 @@ def make_engine() -> Engine:
     threshold = os.getenv("FACE_THRESHOLD", "").strip()
     return Engine(
         model=os.getenv("FACE_MODEL", "Facenet512"),
-        detector="skip",
+        detector=os.getenv("FACE_DETECTOR", "retinaface"),
         metric=os.getenv("FACE_METRIC", "cosine"),
         threshold=float(threshold) if threshold else None,
     )
