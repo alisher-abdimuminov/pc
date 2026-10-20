@@ -94,12 +94,13 @@ DISTANCES = {"cosine": cosine_distance, "euclidean_l2": euclidean_l2_distance}
 
 
 class Engine:
-    def __init__(self, model: str, detector: str, metric: str = "cosine", threshold: float | None = None):
+    def __init__(self, model: str, detector: str, metric: str = "cosine", threshold: float | None = None, antispoofing: bool = True):
         if metric not in DISTANCES:
             raise ValueError(f"unsupported FACE_METRIC {metric!r}; use one of {sorted(DISTANCES)}")
         self.model_name = model
         self.detector = detector
         self.metric = metric
+        self.antispoofing = antispoofing  # FACE_ANTISPOOFING=false: /verify skips the liveness check
         self._threshold_override = threshold
         self.threshold: float = threshold if threshold is not None else 0.0
         self.loaded = False
@@ -193,7 +194,7 @@ class Engine:
 
     def verify(self, data: bytes, stored: list[float]) -> VerifyResult:
         """Liveness + identity check of one live capture against a stored embedding."""
-        res = self.embed(data, anti_spoofing=True)
+        res = self.embed(data, anti_spoofing=self.antispoofing)
         if res.is_real is False:
             return VerifyResult(True, False, res.antispoof_score, None, self.threshold, False)
         if len(stored) != len(res.embedding):

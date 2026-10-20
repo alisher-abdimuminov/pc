@@ -25,6 +25,7 @@ services:
             FACE_DETECTOR: ${FACE_DETECTOR:-retinaface}
             FACE_METRIC: ${FACE_METRIC:-cosine}
             FACE_THRESHOLD: ${FACE_THRESHOLD:-}
+            FACE_ANTISPOOFING: ${FACE_ANTISPOOFING:-true}
             FACE_CONCURRENCY: ${FACE_CONCURRENCY:-2}
             FACE_BUSY_THRESHOLD: ${FACE_BUSY_THRESHOLD:-4}
         volumes:

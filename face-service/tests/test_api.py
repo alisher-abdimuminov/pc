@@ -119,6 +119,13 @@ def test_verify_always_runs_anti_spoofing(fake_client):
     assert post_verify(fake_client, [1, 0, 0, 0]).json()["verified"] is False
 
 
+def test_verify_skips_anti_spoofing_when_disabled(fake_client):
+    fake_client.app.state.engine.antispoofing = False
+    fake_client.fake.spoof_score = 0.01  # would be a spoof
+    body = post_verify(fake_client, [1, 0, 0, 0]).json()
+    assert body["is_real"] is True and body["verified"] is True and body["antispoof_score"] is None
+
+
 def test_verify_no_face_and_multiple_faces(fake_client):
     fake_client.fake.faces = 0
     r = post_verify(fake_client, [1, 0, 0, 0])

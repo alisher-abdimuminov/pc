@@ -32,6 +32,7 @@ def make_engine() -> Engine:
         detector=os.getenv("FACE_DETECTOR", "retinaface"),
         metric=os.getenv("FACE_METRIC", "cosine"),
         threshold=float(threshold) if threshold else None,
+        antispoofing=os.getenv("FACE_ANTISPOOFING", "true").strip().lower() not in ("0", "false", "no", "off"),
     )
 
 
