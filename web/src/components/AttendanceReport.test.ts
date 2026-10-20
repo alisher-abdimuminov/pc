@@ -1,6 +1,7 @@
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { fetchReport } from '@/api/reports'
 import AttendanceReport from './AttendanceReport.vue'
 
 vi.mock('@/api/reports', () => ({
@@ -53,10 +54,26 @@ describe('attendance report marks', () => {
     expect(full!.find('svg').attributes('aria-hidden')).toBe('true') // the label is on the cell, not the icon
   })
 
+  it('shows steps waiting for a manual review in yellow', async () => {
+    vi.mocked(fetchReport).mockResolvedValueOnce({
+      from: '2026-10-05', to: '2026-10-05', dates: ['2026-10-05'],
+      students: [{
+        id: 's1', full_name: 'Test Talaba 1', group_id: 'g', group_name: 'TEST-101',
+        cells: { '2026-10-05': { status: 'full', shift: 1, steps: 3, pending: 1 } },
+        totals: { expected: 1, full: 1, partial: 0, absent: 0, percent: 100 },
+      }],
+    })
+    const w = await render()
+    const cell = w.get('td span[title]')
+    expect(cell.classes().join(' ')).toContain('yellow')
+    expect(cell.find('svg').classes().join(' ')).toContain('lucide-clock')
+    expect(cell.text()).toBe('Tekshiruvda 3/3')
+  })
+
   it('shows the same icons in the legend', async () => {
     const w = await render()
     const legend = w.get('ul')
-    expect(legend.findAll('svg')).toHaveLength(3)
+    expect(legend.findAll('svg')).toHaveLength(4) // full, partial, absent, pending
     expect(legend.text()).not.toMatch(/[✓✗½]/)
   })
 

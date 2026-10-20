@@ -13,7 +13,7 @@ import (
 )
 
 const getAttemptOwner = `-- name: GetAttemptOwner :one
-SELECT t.id, t.image, a.student_id, u.group_id, g.teacher_id
+SELECT t.id, t.image, t.review, a.student_id, u.group_id, g.teacher_id
 FROM attendance_attempts t
 JOIN attendance_steps st ON st.id = t.step_id
 JOIN attendances a ON a.id = st.attendance_id
@@ -25,6 +25,7 @@ WHERE t.id = $1
 type GetAttemptOwnerRow struct {
 	ID        uuid.UUID     `json:"id"`
 	Image     string        `json:"image"`
+	Review    string        `json:"review"`
 	StudentID uuid.UUID     `json:"student_id"`
 	GroupID   uuid.NullUUID `json:"group_id"`
 	TeacherID uuid.NullUUID `json:"teacher_id"`
@@ -36,6 +37,7 @@ func (q *Queries) GetAttemptOwner(ctx context.Context, id uuid.UUID) (GetAttempt
 	err := row.Scan(
 		&i.ID,
 		&i.Image,
+		&i.Review,
 		&i.StudentID,
 		&i.GroupID,
 		&i.TeacherID,
@@ -45,7 +47,8 @@ func (q *Queries) GetAttemptOwner(ctx context.Context, id uuid.UUID) (GetAttempt
 
 const listAttendanceSummary = `-- name: ListAttendanceSummary :many
 SELECT a.student_id, a.date, a.shift::int AS shift,
-       (count(st.id) FILTER (WHERE st.success))::int AS steps_done
+       (count(st.id) FILTER (WHERE st.success))::int AS steps_done,
+       (count(st.id) FILTER (WHERE st.review = 'pending'))::int AS steps_pending
 FROM attendances a
 JOIN users u ON u.id = a.student_id
 LEFT JOIN attendance_steps st ON st.attendance_id = a.id
@@ -63,10 +66,11 @@ type ListAttendanceSummaryParams struct {
 }
 
 type ListAttendanceSummaryRow struct {
-	StudentID uuid.UUID   `json:"student_id"`
-	Date      pgtype.Date `json:"date"`
-	Shift     int32       `json:"shift"`
-	StepsDone int32       `json:"steps_done"`
+	StudentID    uuid.UUID   `json:"student_id"`
+	Date         pgtype.Date `json:"date"`
+	Shift        int32       `json:"shift"`
+	StepsDone    int32       `json:"steps_done"`
+	StepsPending int32       `json:"steps_pending"`
 }
 
 func (q *Queries) ListAttendanceSummary(ctx context.Context, arg ListAttendanceSummaryParams) ([]ListAttendanceSummaryRow, error) {
@@ -88,6 +92,7 @@ func (q *Queries) ListAttendanceSummary(ctx context.Context, arg ListAttendanceS
 			&i.Date,
 			&i.Shift,
 			&i.StepsDone,
+			&i.StepsPending,
 		); err != nil {
 			return nil, err
 		}
@@ -193,8 +198,8 @@ func (q *Queries) ListSchedulesInRange(ctx context.Context, arg ListSchedulesInR
 }
 
 const listStudentAttempts = `-- name: ListStudentAttempts :many
-SELECT a.date, a.shift::int AS shift, st.step::int AS step, st.success AS step_success,
-       t.id AS attempt_id, t.attempted_at, t.image, t.face_verified, t.location_verified,
+SELECT a.date, a.shift::int AS shift, st.step::int AS step, st.success AS step_success, st.review AS step_review,
+       t.id AS attempt_id, t.review, t.attempted_at, t.image, t.face_verified, t.location_verified,
        t.liveness_verified, t.success, t.error, t.face_distance, t.face_threshold,
        t.antispoof_score, t.gps_accuracy, t.latitude, t.longitude
 FROM attendances a
@@ -216,7 +221,9 @@ type ListStudentAttemptsRow struct {
 	Shift            int32              `json:"shift"`
 	Step             int32              `json:"step"`
 	StepSuccess      bool               `json:"step_success"`
+	StepReview       string             `json:"step_review"`
 	AttemptID        uuid.UUID          `json:"attempt_id"`
+	Review           string             `json:"review"`
 	AttemptedAt      pgtype.Timestamptz `json:"attempted_at"`
 	Image            string             `json:"image"`
 	FaceVerified     bool               `json:"face_verified"`
@@ -246,7 +253,9 @@ func (q *Queries) ListStudentAttempts(ctx context.Context, arg ListStudentAttemp
 			&i.Shift,
 			&i.Step,
 			&i.StepSuccess,
+			&i.StepReview,
 			&i.AttemptID,
+			&i.Review,
 			&i.AttemptedAt,
 			&i.Image,
 			&i.FaceVerified,

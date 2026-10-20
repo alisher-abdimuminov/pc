@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 import { attempts, selectOptions, users, type AdminAttempt } from '@/api/admin'
 import DatePicker from '@/components/DatePicker.vue'
+import ReviewSwitch from '@/components/ReviewSwitch.vue'
 import ListFooter from '@/components/ListFooter.vue'
 import ListHeader from '@/components/ListHeader.vue'
 import SelectField from '@/components/SelectField.vue'
@@ -184,9 +185,9 @@ function select(a: AdminAttempt | null) {
               <div class="flex items-center gap-1.5">
                 <Badge
                   variant="outline"
-                  :class="a.success ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400' : 'border-rose-500 text-rose-600 dark:text-rose-400'"
+                  :class="a.review === 'pending' ? 'border-yellow-400 bg-yellow-100 text-yellow-900 dark:bg-yellow-950 dark:text-yellow-300' : a.success ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400' : 'border-rose-500 text-rose-600 dark:text-rose-400'"
                   data-testid="result-badge"
-                >{{ a.success ? uz.attemptsPage.success : uz.attemptsPage.failed }}</Badge>
+                >{{ a.review === 'pending' ? uz.report.pending : a.success ? uz.attemptsPage.success : uz.attemptsPage.failed }}</Badge>
                 <ShieldAlert v-if="spoofed(a)" class="size-4 text-rose-600 dark:text-rose-400" :aria-label="uz.attemptsPage.spoofSuspected" data-testid="spoof-icon" />
               </div>
             </TableCell>
@@ -265,6 +266,10 @@ function select(a: AdminAttempt | null) {
               </div>
             </div>
             <p v-if="deleteError" class="text-destructive text-sm" role="alert">{{ deleteError }}</p>
+          </div>
+          <div v-if="selected.review && isAdmin()" class="space-y-1 sm:col-span-2" data-testid="review-section">
+            <p class="text-sm text-yellow-800 dark:text-yellow-300">{{ uz.teacher.review.hint }}</p>
+            <ReviewSwitch :attempt-id="selected.id" :review="selected.review" as="admin" @click.stop />
           </div>
           <Button as-child variant="outline" class="sm:col-span-2">
             <RouterLink :to="`/admin/students/${selected.student_id}/attempts`">{{ uz.attemptsPage.studentAttempts }}</RouterLink>

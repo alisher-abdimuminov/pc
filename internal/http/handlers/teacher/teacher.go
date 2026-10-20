@@ -5,6 +5,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"pc/internal/apperr"
 	"pc/internal/export"
 	"pc/internal/http/httputil"
 	"pc/internal/service"
@@ -13,10 +14,11 @@ import (
 type Handler struct {
 	reports     *service.ReportService
 	assignments *service.AssignmentService
+	attempts    *service.AttemptsAdminService
 }
 
-func New(r *service.ReportService, a *service.AssignmentService) *Handler {
-	return &Handler{reports: r, assignments: a}
+func New(r *service.ReportService, a *service.AssignmentService, at *service.AttemptsAdminService) *Handler {
+	return &Handler{reports: r, assignments: a, attempts: at}
 }
 
 func (h *Handler) Register(g fiber.Router) {
@@ -24,6 +26,9 @@ func (h *Handler) Register(g fiber.Router) {
 	g.Get("/groups/:id", h.getGroup)
 	g.Get("/groups/:id/report", h.report)
 	g.Get("/groups/:id/report.xlsx", h.reportXLSX)
+
+	g.Get("/students/:id/attempts", h.studentAttempts)
+	g.Put("/attempts/:id/review", h.reviewAttempt)
 
 	g.Get("/assignments", h.listAssignments)
 	g.Post("/assignments", h.createAssignment)
@@ -95,4 +100,37 @@ func sendXLSX(c *fiber.Ctx, data []byte, name string) error {
 	c.Set(fiber.HeaderContentDisposition, `attachment; filename="`+name+`"`)
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.Send(data)
+}
+
+func (h *Handler) studentAttempts(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	tid := me(c)
+	out, err := h.reports.StudentAttempts(c.Context(), &tid, id, c.Query("from"), c.Query("to"))
+	if err != nil {
+		return err
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(out)
+}
+
+// reviewAttempt confirms or rejects an attempt accepted without a face check: {"approved": bool}.
+func (h *Handler) reviewAttempt(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Approved bool `json:"approved"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return apperr.Validation("Ma'lumotlar noto'g'ri", nil)
+	}
+	tid := me(c)
+	if err := h.attempts.Review(c.Context(), httputil.Actor(c), &tid, id, body.Approved); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

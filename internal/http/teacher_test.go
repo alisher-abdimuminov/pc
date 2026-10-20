@@ -335,8 +335,6 @@ func TestAttemptDetailsAreAdminOnly(t *testing.T) {
 
 	// a teacher gets nothing: not for their own student, not for anyone else's, not via any route
 	for _, path := range []string{
-		"/api/teacher/students/" + te.studentA1 + "/attempts",
-		"/api/teacher/students/" + te.studentA1 + "/attempts?from=" + day + "&to=" + day,
 		"/api/teacher/groups/" + te.groupA + "/attempts",
 		"/api/admin/students/" + te.studentA1 + "/attempts",
 		"/api/admin/attempts",
@@ -347,6 +345,12 @@ func TestAttemptDetailsAreAdminOnly(t *testing.T) {
 			}
 		}
 	}
+	// a teacher's attempts list holds only attempts to review: this normal one is not in it
+	own := jsonMap(t, te.get("/api/teacher/students/"+te.studentA1+"/attempts?from="+day+"&to="+day, te.cookieA, 200))
+	if days := own["days"].([]any); len(days) != 0 {
+		t.Errorf("teacher sees a normal attempt: %v", days)
+	}
+	te.get("/api/teacher/students/"+te.studentA1+"/attempts?from="+day+"&to="+day, te.cookieB, 404)
 	// ...and not the selfie either
 	te.get("/api/files/selfies/"+attempt, te.cookieA, 404)
 

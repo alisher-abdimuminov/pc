@@ -35,6 +35,8 @@ type ReportCell struct {
 	Status string `json:"status"`
 	Shift  int    `json:"shift,omitempty"`
 	Steps  int    `json:"steps"`
+	// Pending: steps accepted while the face-service was busy that nobody has confirmed yet.
+	Pending int `json:"pending,omitempty"`
 }
 
 type ReportStudent struct {
@@ -146,7 +148,7 @@ func (s *ReportService) Build(ctx context.Context, groupID, studentID *uuid.UUID
 			status := attendance.StatusNone
 			cell := ReportCell{}
 			if rec, ok := best[key{st.ID, ds}]; ok {
-				cell.Shift, cell.Steps = int(rec.Shift), int(rec.StepsDone)
+				cell.Shift, cell.Steps, cell.Pending = int(rec.Shift), int(rec.StepsDone), int(rec.StepsPending)
 				if rec.StepsDone > 0 || attendance.Expected(d, byUser[st.ID], group) {
 					status = attendance.StatusFromSteps(int(rec.StepsDone))
 				}
@@ -261,6 +263,7 @@ type GroupStudentToday struct {
 	Status   string    `json:"status"` // full | partial | absent | "" (no schedule today)
 	Shift    int       `json:"shift"`
 	Steps    int       `json:"steps"`
+	Pending  int       `json:"pending"` // steps waiting for a manual review
 }
 
 type TeacherGroupDetail struct {
@@ -288,7 +291,7 @@ func (s *ReportService) TeacherGroup(ctx context.Context, teacherID uuid.UUID, g
 	}
 	for _, st := range rep.Students {
 		c := st.Cells[ts]
-		d.Students = append(d.Students, GroupStudentToday{ID: st.ID, FullName: st.FullName, Status: c.Status, Shift: c.Shift, Steps: c.Steps})
+		d.Students = append(d.Students, GroupStudentToday{ID: st.ID, FullName: st.FullName, Status: c.Status, Shift: c.Shift, Steps: c.Steps, Pending: c.Pending})
 	}
 	return d, nil
 }
@@ -310,11 +313,13 @@ type AttemptDTO struct {
 	Latitude         float64   `json:"latitude"`
 	Longitude        float64   `json:"longitude"`
 	HasSelfie        bool      `json:"has_selfie"`
+	Review           string    `json:"review"` // "" | pending | approved | rejected
 }
 
 type StepDTO struct {
 	Step     int          `json:"step"`
 	Success  bool         `json:"success"`
+	Review   string       `json:"review"`
 	Attempts []AttemptDTO `json:"attempts"`
 }
 
@@ -335,13 +340,22 @@ type StudentAttempts struct {
 	Days []AttemptDayDTO `json:"days"`
 }
 
-// StudentAttempts lists steps and attempts by day (admin only).
-func (s *ReportService) StudentAttempts(ctx context.Context, studentID uuid.UUID, fromStr, toStr string) (StudentAttempts, error) {
+// StudentAttempts lists steps and attempts by day. teacherID restricts access to the students of that
+// teacher's groups (nil = admin).
+func (s *ReportService) StudentAttempts(ctx context.Context, teacherID *uuid.UUID, studentID uuid.UUID, fromStr, toStr string) (StudentAttempts, error) {
 	q := db.New(s.pool)
 	var out StudentAttempts
 	stu, err := q.GetUser(ctx, studentID)
 	if err != nil || stu.Role != "student" {
 		return out, apperr.NotFound()
+	}
+	if teacherID != nil {
+		if !stu.GroupID.Valid {
+			return out, apperr.NotFound()
+		}
+		if _, err := s.ownedGroup(ctx, teacherID, stu.GroupID.UUID); err != nil {
+			return out, err
+		}
 	}
 	var groupName *string
 	if stu.GroupID.Valid {
@@ -363,20 +377,23 @@ func (s *ReportService) StudentAttempts(ctx context.Context, studentID uuid.UUID
 	out.From, out.To = from.Format(DateLayout), to.Format(DateLayout)
 	out.Days = []AttemptDayDTO{}
 	for _, r := range rows {
+		if teacherID != nil && r.Review == "" {
+			continue // teachers see only the attempts they have to review
+		}
 		ds := r.Date.Time.Format(DateLayout)
 		if n := len(out.Days); n == 0 || out.Days[n-1].Date != ds {
 			out.Days = append(out.Days, AttemptDayDTO{Date: ds, Shift: int(r.Shift), Steps: []StepDTO{}})
 		}
 		day := &out.Days[len(out.Days)-1]
 		if n := len(day.Steps); n == 0 || day.Steps[n-1].Step != int(r.Step) {
-			day.Steps = append(day.Steps, StepDTO{Step: int(r.Step), Success: r.StepSuccess, Attempts: []AttemptDTO{}})
+			day.Steps = append(day.Steps, StepDTO{Step: int(r.Step), Success: r.StepSuccess, Review: r.StepReview, Attempts: []AttemptDTO{}})
 		}
 		step := &day.Steps[len(day.Steps)-1]
 		step.Attempts = append(step.Attempts, AttemptDTO{
 			ID: r.AttemptID, AttemptedAt: r.AttemptedAt.Time, FaceVerified: r.FaceVerified, LocationVerified: r.LocationVerified,
 			LivenessVerified: r.LivenessVerified, Success: r.Success, Error: r.Error, FaceDistance: floatPtr(r.FaceDistance),
 			FaceThreshold: floatPtr(r.FaceThreshold), AntispoofScore: floatPtr(r.AntispoofScore), GPSAccuracy: r.GpsAccuracy,
-			Latitude: r.Latitude, Longitude: r.Longitude, HasSelfie: r.Image != "",
+			Latitude: r.Latitude, Longitude: r.Longitude, HasSelfie: r.Image != "", Review: r.Review,
 		})
 	}
 	return out, nil

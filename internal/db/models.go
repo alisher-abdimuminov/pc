@@ -51,6 +51,9 @@ type AttendanceAttempt struct {
 	FaceThreshold    pgtype.Float8      `json:"face_threshold"`
 	AntispoofScore   pgtype.Float8      `json:"antispoof_score"`
 	AttemptedAt      pgtype.Timestamptz `json:"attempted_at"`
+	Review           string             `json:"review"`
+	ReviewedBy       uuid.NullUUID      `json:"reviewed_by"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 }
 
 type AttendanceStep struct {
@@ -59,6 +62,7 @@ type AttendanceStep struct {
 	Step         int16              `json:"step"`
 	Success      bool               `json:"success"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Review       string             `json:"review"`
 }
 
 type AuditLog struct {

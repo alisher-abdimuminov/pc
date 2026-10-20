@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -32,6 +33,8 @@ type mockFace struct {
 	status int           // 0 = 200
 	body   string        // JSON body for /verify; "" = default match
 	delay  time.Duration // simulated inference time
+	busy   bool          // /health reports an overloaded service
+	health int           // /health status; 0 = 200
 }
 
 const matchBody = `{"face_found":true,"is_real":true,"antispoof_score":0.98,"distance":0.12,"threshold":0.3,"verified":true}`
@@ -47,6 +50,15 @@ func newMockFace(t *testing.T) *mockFace {
 		status, body, delay := m.status, m.body, m.delay
 		m.mu.Unlock()
 		switch r.URL.Path {
+		case "/health":
+			m.mu.Lock()
+			busy, health := m.busy, m.health
+			m.mu.Unlock()
+			if health != 0 {
+				w.WriteHeader(health)
+				return
+			}
+			fmt.Fprintf(w, `{"status":"ok","busy":%t}`, busy)
 		case "/verify":
 			m.calls.Add(1)
 			if delay > 0 {
@@ -83,7 +95,14 @@ func (m *mockFace) set(status int, body string) {
 	m.mu.Unlock()
 }
 
-func (m *mockFace) reset() { m.set(0, ""); m.mu.Lock(); m.delay = 0; m.mu.Unlock() }
+func (m *mockFace) reset() {
+	m.set(0, "")
+	m.mu.Lock()
+	m.delay, m.busy, m.health = 0, false, 0
+	m.mu.Unlock()
+}
+
+func (m *mockFace) setBusy(b bool) { m.mu.Lock(); m.busy = b; m.mu.Unlock() }
 
 func (m *mockFace) setDelay(d time.Duration) { m.mu.Lock(); m.delay = d; m.mu.Unlock() }
 
@@ -275,7 +294,11 @@ func TestAttemptSuccessAcrossTheDay(t *testing.T) {
 	a.get("/api/files/selfies/"+id, a.cookieA, 404) // not even the student's own teacher
 	a.get("/api/files/selfies/"+id, a.cookieB, 404)
 	a.get("/api/files/selfies/"+id, a.stu, 404) // and the student cannot fetch it back
-	a.get("/api/teacher/students/"+a.studentA1+"/attempts", a.cookieA, 404)
+	// a teacher's list holds only attempts to review; this normal one is not in it
+	if days := jsonMap(t, a.get("/api/teacher/students/"+a.studentA1+"/attempts", a.cookieA, 200))["days"].([]any); len(days) != 0 {
+		t.Fatalf("teacher sees a normal attempt: %v", days)
+	}
+	a.get("/api/teacher/students/"+a.studentA1+"/attempts", a.cookieB, 404)
 
 	// only an admin can delete an attempt; doing so removes the selfie and un-succeeds the step
 	if resp, _ := a.do("DELETE", "/api/admin/attempts/"+id, "", a.cookieA); resp.StatusCode != 403 {
@@ -379,23 +402,106 @@ func TestAttemptLivenessFaceAndNoFace(t *testing.T) {
 	}
 }
 
-func TestAttemptFaceServiceDownConsumesNothing(t *testing.T) {
+func TestAttemptFaceServiceDownConsumesNothingWhenLocationFails(t *testing.T) {
 	a := newAttemptEnv(t)
 	for _, status := range []int{500, 503, 401} {
 		a.mock.set(status, `x`)
-		r := a.good()
+		r := a.attempt(farLat, farLng, goodAcc) // the location would fail anyway, so there is nothing to defer
 		if r.Status != 503 || r.Code != "face_unavailable" {
 			t.Fatalf("status %d -> %+v", status, r)
 		}
 	}
 	a.expectNothingRecorded("service down")
+}
 
-	// the same service going away entirely
-	a.mock.srv.Close()
-	if r := a.good(); r.Status != 503 || r.Code != "face_unavailable" {
-		t.Fatalf("closed: %+v", r)
+func TestAttemptAcceptedForReviewWhenFaceServiceIsBusyOrDown(t *testing.T) {
+	cases := map[string]func(a *aEnv){
+		"busy":       func(a *aEnv) { a.mock.setBusy(true) },
+		"verify 503": func(a *aEnv) { a.mock.set(503, `x`) },
+		"health 500": func(a *aEnv) { a.mock.health = 500 },
+		"closed":     func(a *aEnv) { a.mock.srv.Close() },
 	}
-	a.expectNothingRecorded("service closed")
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := newAttemptEnv(t)
+			setup(a)
+			r := a.good()
+			if r.Status != 200 || r.Body["success"] != true || r.Body["message"] != "Tasdiqlandi" {
+				t.Fatalf("student must be told it passed: %+v", r)
+			}
+			if got := a.count(`SELECT count(*) FROM attendance_attempts WHERE review='pending' AND success AND NOT face_verified`); got != 1 {
+				t.Fatalf("pending attempts = %d", got)
+			}
+			if got := a.count(`SELECT count(*) FROM attendance_steps WHERE review='pending' AND success`); got != 1 {
+				t.Fatalf("pending steps = %d", got)
+			}
+			// the same step cannot be submitted twice
+			if r := a.good(); r.Code != "step_done" {
+				t.Fatalf("repeat: %+v", r)
+			}
+		})
+	}
+}
+
+func TestBusyServiceStillRejectsWrongLocation(t *testing.T) {
+	a := newAttemptEnv(t)
+	a.mock.setBusy(true)
+	r := a.attempt(farLat, farLng, goodAcc)
+	if r.Body["success"] != false || !strings.Contains(strings.Join(strs(r.Body["failures"]), ","), "location") {
+		t.Fatalf("%+v", r)
+	}
+	if a.count(`SELECT count(*) FROM attendance_attempts WHERE review<>''`) != 0 {
+		t.Fatal("a failed location must not be queued for review")
+	}
+}
+
+func TestReviewApproveAndRejectPendingAttempt(t *testing.T) {
+	a := newAttemptEnv(t)
+	a.mock.setBusy(true)
+	a.good()
+	var id string
+	a.pool.QueryRow(context.Background(), `SELECT id FROM attendance_attempts WHERE review='pending'`).Scan(&id)
+
+	// report + teacher group page show it as pending
+	day := ds(a.day)
+	rep := jsonMap(t, a.get("/api/teacher/groups/"+a.groupA+"/report?from="+day+"&to="+day, a.cookieA, 200))
+	cell := rep["students"].([]any)[0].(map[string]any)["cells"].(map[string]any)[day].(map[string]any)
+	if cell["pending"] != float64(1) {
+		t.Fatalf("report cell: %v", cell)
+	}
+	// the teacher sees it and may open its selfie; another teacher may not
+	list := jsonMap(t, a.get("/api/teacher/students/"+a.studentA1+"/attempts?from="+day+"&to="+day, a.cookieA, 200))
+	if len(list["days"].([]any)) != 1 {
+		t.Fatalf("teacher list: %v", list)
+	}
+	a.get("/api/files/selfies/"+id, a.cookieA, 200)
+	a.get("/api/files/selfies/"+id, a.cookieB, 404)
+	if r, _ := a.do("PUT", "/api/teacher/attempts/"+id+"/review", `{"approved":true}`, a.cookieB); r.StatusCode != 404 {
+		t.Fatalf("other teacher: %d", r.StatusCode)
+	}
+
+	// approve
+	if r, b := a.do("PUT", "/api/teacher/attempts/"+id+"/review", `{"approved":true}`, a.cookieA); r.StatusCode != 204 {
+		t.Fatalf("approve: %d %s", r.StatusCode, b)
+	}
+	if a.count(`SELECT count(*) FROM attendance_steps WHERE review='approved' AND success`) != 1 {
+		t.Fatal("step not approved")
+	}
+	// admin rejects: the step is lost and cannot be retried
+	if r, b := a.do("PUT", "/api/admin/attempts/"+id+"/review", `{"approved":false}`, a.admin); r.StatusCode != 204 {
+		t.Fatalf("reject: %d %s", r.StatusCode, b)
+	}
+	if a.count(`SELECT count(*) FROM attendance_steps WHERE review='rejected' AND NOT success`) != 1 {
+		t.Fatal("step not rejected")
+	}
+	a.mock.reset()
+	if r := a.good(); r.Status != 409 || r.Code != "step_rejected" {
+		t.Fatalf("retry after reject: %+v", r)
+	}
+	// a normal attempt has nothing to review
+	if a.count(`SELECT count(*) FROM audit_logs WHERE entity_type='attendance_attempt' AND action='update'`) != 2 {
+		t.Fatal("review not audited")
+	}
 }
 
 func TestAttemptOutsideHoursAndPreconditions(t *testing.T) {

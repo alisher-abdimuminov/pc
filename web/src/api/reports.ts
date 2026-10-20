@@ -6,6 +6,8 @@ export interface ReportCell {
   status: DayStatus
   shift?: number
   steps: number
+  /** steps accepted without a face check (service was busy) that nobody has confirmed yet */
+  pending?: number
 }
 export interface Totals {
   expected: number
@@ -44,10 +46,13 @@ export interface Attempt {
   latitude: number
   longitude: number
   has_selfie: boolean
+  review: Review
 }
+export type Review = '' | 'pending' | 'approved' | 'rejected'
 export interface StepAttempts {
   step: number
   success: boolean
+  review: Review
   attempts: Attempt[]
 }
 export interface AttemptDay {

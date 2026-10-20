@@ -159,7 +159,7 @@ func NewServer(d Deps) *fiber.App {
 		Schedules:   service.NewScheduleService(d.Pool),
 		Audit:       service.NewAuditService(d.Pool, d.Cfg.Location),
 	}).Register(api.Group("/admin", requireAuth, middleware.RequireRole("admin", "little")))
-	teacherh.New(reports, service.NewAssignmentService(d.Pool, store, d.Cfg.Location)).
+	teacherh.New(reports, service.NewAssignmentService(d.Pool, store, d.Cfg.Location), service.NewAttemptsAdminService(d.Pool, d.Cfg.Location)).
 		Register(api.Group("/teacher", requireAuth, middleware.RequireRole("teacher")))
 	filesh.New(service.NewFileService(d.Pool, store)).Register(api.Group("/files", requireAuth))
 	studenth.New(

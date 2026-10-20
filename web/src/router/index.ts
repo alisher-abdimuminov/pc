@@ -47,6 +47,7 @@ const studentChildren: RouteRecordRaw[] = [
 
 const teacherChildren: RouteRecordRaw[] = [
   { path: 'groups/:id', component: () => import('@/pages/teacher/TeacherGroupPage.vue') },
+  { path: 'students/:id', component: () => import('@/pages/teacher/TeacherStudentAttemptsPage.vue') },
   { path: 'assignments', component: () => import('@/pages/teacher/AssignmentsPage.vue') },
   { path: 'assignments/:id', component: () => import('@/pages/teacher/AssignmentDetailPage.vue') },
 ]

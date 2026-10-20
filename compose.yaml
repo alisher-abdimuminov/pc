@@ -26,6 +26,7 @@ services:
             FACE_METRIC: ${FACE_METRIC:-cosine}
             FACE_THRESHOLD: ${FACE_THRESHOLD:-}
             FACE_CONCURRENCY: ${FACE_CONCURRENCY:-2}
+            FACE_BUSY_THRESHOLD: ${FACE_BUSY_THRESHOLD:-4}
         volumes:
             - deepface-weights:/root/.deepface
         healthcheck:

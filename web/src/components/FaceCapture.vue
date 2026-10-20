@@ -34,6 +34,11 @@ let detector: FaceDetector | null = null
 let frame: number | null = null
 let lastVideoTime = -1
 let captured = false
+let lastMultipleAt = -Infinity
+let lastWarning = ''
+let lastWarningAt = -Infinity
+const WARNING_HOLD_MS = 1200 // keep the reason on screen before the 3 s countdown starts again
+const MULTIPLE_COOLDOWN_MS = 1500 // a second face that flickers must not slip through between detections
 const timer = new StableTimer()
 
 const stroke = computed(() => `${Math.round(progress.value * 100)} 100`)
@@ -47,6 +52,8 @@ async function start() {
   stop()
   captured = false
   lastVideoTime = -1
+  lastMultipleAt = -Infinity
+  lastWarningAt = -Infinity
   timer.reset()
   progress.value = 0
   show('idle', uz.verify.guide.loading)
@@ -93,12 +100,22 @@ function tick() {
 
   const now = performance.now()
   const result = detector.detectForVideo(el, now)
-  const verdict = evaluateFace(result.faceLandmarks, result.facialTransformationMatrixes?.[0]?.data)
+  let verdict = evaluateFace(result.faceLandmarks, result.facialTransformationMatrixes?.[0]?.data)
+  if (verdict.key === 'multiple') lastMultipleAt = now
+  else if (verdict.ok && now - lastMultipleAt < MULTIPLE_COOLDOWN_MS) verdict = { ok: false, key: 'multiple' }
 
   if (!verdict.ok) {
     timer.reset()
     progress.value = 0
-    show('warning', uz.verify.guide[verdict.key])
+    lastWarning = uz.verify.guide[verdict.key]
+    lastWarningAt = now
+    show('warning', lastWarning)
+    return
+  }
+  if (now - lastWarningAt < WARNING_HOLD_MS) {
+    timer.reset()
+    progress.value = 0
+    show('warning', lastWarning)
     return
   }
   if (props.blockedMessage) {
@@ -114,6 +131,18 @@ function tick() {
 
 async function takePhoto(el: HTMLVideoElement) {
   captured = true
+  // last check on the very frame that is about to be sent: exactly one acceptable face
+  const last = detector!.detectForVideo(el, performance.now())
+  const verdict = evaluateFace(last.faceLandmarks, last.facialTransformationMatrixes?.[0]?.data)
+  if (!verdict.ok) {
+    if (verdict.key === 'multiple') lastMultipleAt = performance.now()
+    captured = false
+    timer.reset()
+    progress.value = 0
+    show('warning', uz.verify.guide[verdict.key])
+    frame = requestAnimationFrame(tick)
+    return
+  }
   const { width, height } = scaleToFit(el.videoWidth, el.videoHeight, MAX_CAPTURE_PX)
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -170,7 +199,9 @@ defineExpose({ restart: start })
       </div>
 
       <!-- status -->
-      <div class="absolute inset-x-3 bottom-4 rounded-xl bg-black/60 p-3 text-center text-sm text-white backdrop-blur" role="status" aria-live="polite">
+      <div class="absolute inset-x-3 bottom-4 rounded-xl p-3 text-center text-sm text-white backdrop-blur transition-colors"
+        :class="state === 'warning' ? 'bg-amber-600/90' : state === 'error' ? 'bg-red-600/90' : 'bg-black/60'"
+        role="status" aria-live="polite">
         <div class="flex items-center justify-center gap-2">
           <LoaderCircle v-if="loading || busy" class="size-4 animate-spin" aria-hidden="true" />
           <CircleCheck v-else-if="state === 'done'" class="size-4 text-emerald-400" aria-hidden="true" />

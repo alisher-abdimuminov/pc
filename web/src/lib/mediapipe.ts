@@ -27,6 +27,8 @@ export function loadFaceLandmarker(): Promise<FaceDetector> {
         baseOptions: { modelAssetPath: MODEL_URL, delegate },
         outputFacialTransformationMatrixes: true,
         runningMode: 'VIDEO',
+        minFaceDetectionConfidence: 0.3, // lower than the default so a second, partly visible face is still noticed
+        minFacePresenceConfidence: 0.3,
         numFaces: 2, // two, so a second person in the frame can be detected and refused
       })
     try {

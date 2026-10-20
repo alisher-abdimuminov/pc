@@ -159,6 +159,9 @@ func (s *StudentService) TodayAt(ctx context.Context, u db.User, now time.Time) 
 	}
 	for _, w := range attendance.ShiftWindows(v.Shift) {
 		r := done[w.Step]
+		if r.Review == ReviewRejected {
+			r.Attempts = int32(s.maxAttempts) // a rejected step is final: no more tries
+		}
 		v.Steps = append(v.Steps, TodayStep{
 			Step: w.Step, Start: attendance.Clock(w.Start), End: attendance.Clock(w.End),
 			State:    string(attendance.StateOf(w, r.Success, wall)),

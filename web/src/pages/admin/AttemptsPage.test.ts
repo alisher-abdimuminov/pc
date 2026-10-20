@@ -12,7 +12,7 @@ const attempt = (over: Partial<AdminAttempt> = {}): AdminAttempt => ({
   student_id: 's1', student_name: 'Test Talaba 1', student_username: 'student1', student_active: true, group_id: 'g1', group_name: 'TEST-101',
   face_verified: false, location_verified: true, liveness_verified: true, success: false,
   error: 'Yuz saqlangan namunaga mos kelmadi', face_distance: 0.8, face_threshold: 0.3, antispoof_score: 0.9,
-  gps_accuracy: 12, latitude: 39.6505, longitude: 66.9505, ip: '10.0.0.5', has_selfie: true, ...over,
+  gps_accuracy: 12, latitude: 39.6505, longitude: 66.9505, ip: '10.0.0.5', has_selfie: true, review: '', ...over,
 })
 
 async function render(items: AdminAttempt[]) {

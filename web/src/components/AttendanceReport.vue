@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronLeft, ChevronRight, Contrast, Download, X } from '@lucide/vue'
+import { Check, ChevronLeft, ChevronRight, Clock, Contrast, Download, X } from '@lucide/vue'
 import { useQuery, keepPreviousData } from '@tanstack/vue-query'
 import { computed, ref, type Component } from 'vue'
 import { fetchReport, type DayStatus, type ReportCell } from '@/api/reports'
@@ -65,8 +65,14 @@ const SYMBOL: Record<Exclude<DayStatus, ''>, { icon: Component; cls: string; lab
   absent: { icon: X, cls: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300', label: uz.report.absent },
 }
 
+const PENDING_CLS = 'border-yellow-400 bg-yellow-100 text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-300'
+
 function cellInfo(c: ReportCell | undefined) {
   if (!c || !c.status) return null
+  if (c.pending) {
+    const title = `${uz.report.pending}: ${c.pending}, ${c.steps}/3. ${uz.report.pendingHint}`
+    return { icon: Clock, cls: PENDING_CLS, label: uz.report.pending, title, shift: c.shift }
+  }
   const s = SYMBOL[c.status]
   const title = `${s.label}${c.shift ? `, ${c.shift}-${uz.report.shift}` : ''}${c.status === 'partial' ? ` (${c.steps}/3)` : ''}`
   return { ...s, title, shift: c.shift }
@@ -80,7 +86,7 @@ const hatched = (d: string) => dow(d) === 0 || d > today
 /** The month is named on the first column and on the 1st, so a range that crosses months stays readable. */
 const monthHint = (d: string, i: number) => (i === 0 || dayNumber(d) === 1 ? uz.report.months[Number(d.slice(5, 7)) - 1] : '')
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
-const badgeText = (c: ReportCell) => (c.status === 'partial' ? `${c.steps}/3` : SYMBOL[c.status as Exclude<DayStatus, ''>].label)
+const badgeText = (c: ReportCell) => (c.pending ? `${uz.report.pending} ${c.steps}/3` : c.status === 'partial' ? `${c.steps}/3` : SYMBOL[c.status as Exclude<DayStatus, ''>].label)
 </script>
 
 <template>
@@ -181,6 +187,7 @@ const badgeText = (c: ReportCell) => (c.status === 'partial' ? `${c.steps}/3` : 
         <li class="flex items-center gap-1"><Check class="size-4" aria-hidden="true" /> {{ uz.report.full }}</li>
         <li class="flex items-center gap-1"><Contrast class="size-4" aria-hidden="true" /> {{ uz.report.partial }}</li>
         <li class="flex items-center gap-1"><X class="size-4" aria-hidden="true" /> {{ uz.report.absent }}</li>
+        <li class="flex items-center gap-1"><Clock class="size-4 text-yellow-600" aria-hidden="true" /> {{ uz.report.pending }}</li>
         <li>{{ uz.report.percentHint }}</li>
       </ul>
     </template>

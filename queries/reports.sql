@@ -13,7 +13,8 @@ WHERE start_date <= sqlc.arg('to_date')::date AND end_date >= sqlc.arg('from_dat
 
 -- name: ListAttendanceSummary :many
 SELECT a.student_id, a.date, a.shift::int AS shift,
-       (count(st.id) FILTER (WHERE st.success))::int AS steps_done
+       (count(st.id) FILTER (WHERE st.success))::int AS steps_done,
+       (count(st.id) FILTER (WHERE st.review = 'pending'))::int AS steps_pending
 FROM attendances a
 JOIN users u ON u.id = a.student_id
 LEFT JOIN attendance_steps st ON st.attendance_id = a.id
@@ -23,8 +24,8 @@ WHERE a.date BETWEEN sqlc.arg('from_date')::date AND sqlc.arg('to_date')::date
 GROUP BY a.id;
 
 -- name: ListStudentAttempts :many
-SELECT a.date, a.shift::int AS shift, st.step::int AS step, st.success AS step_success,
-       t.id AS attempt_id, t.attempted_at, t.image, t.face_verified, t.location_verified,
+SELECT a.date, a.shift::int AS shift, st.step::int AS step, st.success AS step_success, st.review AS step_review,
+       t.id AS attempt_id, t.review, t.attempted_at, t.image, t.face_verified, t.location_verified,
        t.liveness_verified, t.success, t.error, t.face_distance, t.face_threshold,
        t.antispoof_score, t.gps_accuracy, t.latitude, t.longitude
 FROM attendances a
@@ -35,7 +36,7 @@ WHERE a.student_id = sqlc.arg('student_id')::uuid
 ORDER BY a.date DESC, st.step, t.attempted_at;
 
 -- name: GetAttemptOwner :one
-SELECT t.id, t.image, a.student_id, u.group_id, g.teacher_id
+SELECT t.id, t.image, t.review, a.student_id, u.group_id, g.teacher_id
 FROM attendance_attempts t
 JOIN attendance_steps st ON st.id = t.step_id
 JOIN attendances a ON a.id = st.attendance_id

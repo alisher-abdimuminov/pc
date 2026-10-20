@@ -90,7 +90,8 @@ func (s *FileService) Open(ctx context.Context, user db.User, kind string, id uu
 		if err != nil || o.Image == "" {
 			return nil, apperr.NotFound()
 		}
-		allowed := permission.Has(user, "attempts:view") // attempt details and selfies: admins, or little admins granted attempts
+		allowed := permission.Has(user, "attempts:view") || // attempt details and selfies: admins, or little admins granted attempts
+			(user.Role == "teacher" && o.Review != "" && o.TeacherID == uuid.NullUUID{UUID: user.ID, Valid: true}) // teachers: only attempts they have to review
 		if !allowed {
 			return nil, apperr.NotFound()
 		}

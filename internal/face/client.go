@@ -33,6 +33,9 @@ const UnavailableMessage = "Yuzni tekshirish xizmati vaqtincha ishlamayapti"
 type Service interface {
 	Embed(ctx context.Context, image []byte, antiSpoofing bool) (EmbedResult, error)
 	Verify(ctx context.Context, image []byte, embedding []float32) (VerifyResult, error)
+	// Busy reports whether the service is overloaded (its queue is full). An error means it cannot be
+	// reached at all; callers treat that as busy too.
+	Busy(ctx context.Context) (bool, error)
 }
 
 type EmbedResult struct {
@@ -147,4 +150,32 @@ func (c *Client) Verify(ctx context.Context, image []byte, embedding []float32) 
 	var out VerifyResult
 	err = c.post(ctx, "/verify", image, map[string]string{"embedding": string(emb)}, &out)
 	return out, err
+}
+
+// busyCheckTimeout keeps the pre-check cheap: a service that cannot answer /health quickly is busy.
+const busyCheckTimeout = 2 * time.Second
+
+func (c *Client) Busy(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, busyCheckTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Internal-Token", c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrUnavailable, unwrapNet(err))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("%w: status %d", ErrUnavailable, resp.StatusCode)
+	}
+	var out struct {
+		Busy bool `json:"busy"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
+		return false, fmt.Errorf("%w: bad response: %v", ErrUnavailable, err)
+	}
+	return out.Busy, nil
 }

@@ -16,7 +16,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Location.String() != "Asia/Tashkent" || c.MaxAttemptsPerStep != 5 || c.SessionTTL.Hours() != 168 {
+	if c.Location.String() != "Asia/Tashkent" || c.MaxAttemptsPerStep != 10 || c.SessionTTL.Hours() != 168 {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }

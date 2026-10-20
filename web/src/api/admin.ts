@@ -251,11 +251,13 @@ export interface AdminAttempt {
   longitude: number
   ip: string
   has_selfie: boolean
+  review: '' | 'pending' | 'approved' | 'rejected'
 }
 
 export const attempts = {
   list: (q?: ListQuery) => api<Page<AdminAttempt>>(`${base}/attempts${qs(q)}`),
   remove: (id: string) => api<void>(`${base}/attempts/${id}`, send('DELETE')),
+  review: (id: string, approved: boolean) => api<void>(`${base}/attempts/${id}/review`, send('PUT', { approved })),
 }
 
 export const audit = {

@@ -46,9 +46,21 @@ const tabs = computed(() => [
         <TableBody>
           <TableRow v-for="s in data.students" :key="s.id">
             <TableCell>
-              <span class="font-medium">{{ s.full_name }}</span>
+              <RouterLink v-if="s.pending" :to="`/teacher/students/${s.id}?group=${id}`" class="font-medium hover:underline">{{ s.full_name }}</RouterLink>
+              <span v-else class="font-medium">{{ s.full_name }}</span>
             </TableCell>
-            <TableCell><StatusBadge :status="s.status" /></TableCell>
+            <TableCell>
+              <div class="flex flex-wrap items-center gap-2">
+                <StatusBadge :status="s.status" />
+                <RouterLink
+                  v-if="s.pending"
+                  :to="`/teacher/students/${s.id}?group=${id}`"
+                  class="rounded-md border border-yellow-400 bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-300"
+                  :title="uz.report.pendingHint"
+                  data-testid="pending-badge"
+                >{{ uz.report.pending }}: {{ s.pending }}</RouterLink>
+              </div>
+            </TableCell>
             <TableCell>{{ s.shift || '—' }}</TableCell>
             <TableCell>{{ s.status ? `${s.steps}/3` : '—' }}</TableCell>
           </TableRow>

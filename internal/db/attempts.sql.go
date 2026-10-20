@@ -37,7 +37,8 @@ WHERE ($1::text = '' OR u.full_name ILIKE '%' || $1 || '%' OR u.username ILIKE '
        OR ($7 = 'location' AND NOT t.location_verified)
        OR ($7 = 'face' AND t.liveness_verified AND NOT t.face_verified)
        OR ($7 = 'liveness' AND NOT t.liveness_verified AND t.antispoof_score IS NOT NULL)
-       OR ($7 = 'no_face' AND NOT t.liveness_verified AND t.antispoof_score IS NULL))
+       OR ($7 = 'no_face' AND NOT t.liveness_verified AND t.antispoof_score IS NULL AND t.review = '')
+       OR ($7 = 'pending' AND t.review = 'pending'))
 `
 
 type CountAttemptsAdminParams struct {
@@ -104,9 +105,9 @@ func (q *Queries) CountStepAttempts(ctx context.Context, stepID uuid.UUID) (int6
 const createAttempt = `-- name: CreateAttempt :one
 INSERT INTO attendance_attempts (step_id, image, ip_address, user_agent, latitude, longitude, gps_accuracy,
     location_id, face_verified, location_verified, liveness_verified, success, error,
-    face_distance, face_threshold, antispoof_score)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, step_id, image, ip_address, user_agent, latitude, longitude, gps_accuracy, location_id, face_verified, location_verified, liveness_verified, success, error, face_distance, face_threshold, antispoof_score, attempted_at
+    face_distance, face_threshold, antispoof_score, review)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING id, step_id, image, ip_address, user_agent, latitude, longitude, gps_accuracy, location_id, face_verified, location_verified, liveness_verified, success, error, face_distance, face_threshold, antispoof_score, attempted_at, review, reviewed_by, reviewed_at
 `
 
 type CreateAttemptParams struct {
@@ -126,6 +127,7 @@ type CreateAttemptParams struct {
 	FaceDistance     pgtype.Float8 `json:"face_distance"`
 	FaceThreshold    pgtype.Float8 `json:"face_threshold"`
 	AntispoofScore   pgtype.Float8 `json:"antispoof_score"`
+	Review           string        `json:"review"`
 }
 
 func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (AttendanceAttempt, error) {
@@ -146,6 +148,7 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (A
 		arg.FaceDistance,
 		arg.FaceThreshold,
 		arg.AntispoofScore,
+		arg.Review,
 	)
 	var i AttendanceAttempt
 	err := row.Scan(
@@ -167,6 +170,9 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (A
 		&i.FaceThreshold,
 		&i.AntispoofScore,
 		&i.AttemptedAt,
+		&i.Review,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
 	)
 	return i, err
 }
@@ -322,8 +328,48 @@ func (q *Queries) GetAttemptForDelete(ctx context.Context, id uuid.UUID) (GetAtt
 	return i, err
 }
 
+const getAttemptForReview = `-- name: GetAttemptForReview :one
+SELECT t.id, t.step_id, t.review, t.success, t.location_verified, a.student_id, a.date, st.step::int AS step, g.teacher_id
+FROM attendance_attempts t
+JOIN attendance_steps st ON st.id = t.step_id
+JOIN attendances a ON a.id = st.attendance_id
+JOIN users u ON u.id = a.student_id
+LEFT JOIN groups g ON g.id = u.group_id
+WHERE t.id = $1
+FOR UPDATE OF t, st
+`
+
+type GetAttemptForReviewRow struct {
+	ID               uuid.UUID     `json:"id"`
+	StepID           uuid.UUID     `json:"step_id"`
+	Review           string        `json:"review"`
+	Success          bool          `json:"success"`
+	LocationVerified bool          `json:"location_verified"`
+	StudentID        uuid.UUID     `json:"student_id"`
+	Date             pgtype.Date   `json:"date"`
+	Step             int32         `json:"step"`
+	TeacherID        uuid.NullUUID `json:"teacher_id"`
+}
+
+func (q *Queries) GetAttemptForReview(ctx context.Context, id uuid.UUID) (GetAttemptForReviewRow, error) {
+	row := q.db.QueryRow(ctx, getAttemptForReview, id)
+	var i GetAttemptForReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.Review,
+		&i.Success,
+		&i.LocationVerified,
+		&i.StudentID,
+		&i.Date,
+		&i.Step,
+		&i.TeacherID,
+	)
+	return i, err
+}
+
 const getStep = `-- name: GetStep :one
-SELECT id, attendance_id, step, success, created_at FROM attendance_steps WHERE attendance_id = $1 AND step = $2
+SELECT id, attendance_id, step, success, created_at, review FROM attendance_steps WHERE attendance_id = $1 AND step = $2
 `
 
 type GetStepParams struct {
@@ -340,12 +386,13 @@ func (q *Queries) GetStep(ctx context.Context, arg GetStepParams) (AttendanceSte
 		&i.Step,
 		&i.Success,
 		&i.CreatedAt,
+		&i.Review,
 	)
 	return i, err
 }
 
 const listAttemptsAdmin = `-- name: ListAttemptsAdmin :many
-SELECT t.id, t.attempted_at, t.image, t.latitude, t.longitude, t.gps_accuracy, t.face_verified, t.location_verified,
+SELECT t.id, t.attempted_at, t.image, t.review, t.latitude, t.longitude, t.gps_accuracy, t.face_verified, t.location_verified,
        t.liveness_verified, t.success, t.error, t.face_distance, t.face_threshold, t.antispoof_score, t.ip_address,
        a.date, a.shift::int AS shift, st.step::int AS step,
        u.id AS student_id, u.full_name AS student_name, u.username AS student_username, u.is_active AS student_active, u.group_id, g.name AS group_name
@@ -364,7 +411,8 @@ WHERE ($1::text = '' OR u.full_name ILIKE '%' || $1 || '%' OR u.username ILIKE '
        OR ($7 = 'location' AND NOT t.location_verified)
        OR ($7 = 'face' AND t.liveness_verified AND NOT t.face_verified)
        OR ($7 = 'liveness' AND NOT t.liveness_verified AND t.antispoof_score IS NOT NULL)
-       OR ($7 = 'no_face' AND NOT t.liveness_verified AND t.antispoof_score IS NULL))
+       OR ($7 = 'no_face' AND NOT t.liveness_verified AND t.antispoof_score IS NULL AND t.review = '')
+       OR ($7 = 'pending' AND t.review = 'pending'))
 ORDER BY t.attempted_at DESC
 LIMIT $9 OFFSET $8
 `
@@ -385,6 +433,7 @@ type ListAttemptsAdminRow struct {
 	ID               uuid.UUID          `json:"id"`
 	AttemptedAt      pgtype.Timestamptz `json:"attempted_at"`
 	Image            string             `json:"image"`
+	Review           string             `json:"review"`
 	Latitude         float64            `json:"latitude"`
 	Longitude        float64            `json:"longitude"`
 	GpsAccuracy      float64            `json:"gps_accuracy"`
@@ -431,6 +480,7 @@ func (q *Queries) ListAttemptsAdmin(ctx context.Context, arg ListAttemptsAdminPa
 			&i.ID,
 			&i.AttemptedAt,
 			&i.Image,
+			&i.Review,
 			&i.Latitude,
 			&i.Longitude,
 			&i.GpsAccuracy,
@@ -574,6 +624,16 @@ func (q *Queries) LockAttendanceNoLock(ctx context.Context, arg LockAttendanceNo
 	return i, err
 }
 
+const markStepPending = `-- name: MarkStepPending :exec
+UPDATE attendance_steps SET success = true, review = 'pending' WHERE id = $1
+`
+
+// The step counts as done for the student, but a human has to confirm it.
+func (q *Queries) MarkStepPending(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markStepPending, id)
+	return err
+}
+
 const markStepSuccess = `-- name: MarkStepSuccess :exec
 UPDATE attendance_steps SET success = true WHERE id = $1
 `
@@ -584,13 +644,51 @@ func (q *Queries) MarkStepSuccess(ctx context.Context, id uuid.UUID) error {
 }
 
 const refreshStepSuccess = `-- name: RefreshStepSuccess :exec
-UPDATE attendance_steps SET success = EXISTS (SELECT 1 FROM attendance_attempts WHERE step_id = $1 AND success)
-WHERE id = $1
+UPDATE attendance_steps SET
+    success = EXISTS (SELECT 1 FROM attendance_attempts x WHERE x.step_id = attendance_steps.id AND x.success),
+    review = COALESCE((SELECT t.review FROM attendance_attempts t WHERE t.step_id = attendance_steps.id AND (t.success OR t.review = 'rejected') ORDER BY t.attempted_at DESC LIMIT 1), '')
+WHERE attendance_steps.id = $1
 `
 
 // Re-derives a step's success flag from its remaining attempts (used after an attempt is deleted).
-func (q *Queries) RefreshStepSuccess(ctx context.Context, stepID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, refreshStepSuccess, stepID)
+func (q *Queries) RefreshStepSuccess(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, refreshStepSuccess, id)
+	return err
+}
+
+const reviewAttempt = `-- name: ReviewAttempt :exec
+UPDATE attendance_attempts SET review = $2, success = $3, reviewed_by = $4, reviewed_at = now() WHERE id = $1
+`
+
+type ReviewAttemptParams struct {
+	ID         uuid.UUID     `json:"id"`
+	Review     string        `json:"review"`
+	Success    bool          `json:"success"`
+	ReviewedBy uuid.NullUUID `json:"reviewed_by"`
+}
+
+func (q *Queries) ReviewAttempt(ctx context.Context, arg ReviewAttemptParams) error {
+	_, err := q.db.Exec(ctx, reviewAttempt,
+		arg.ID,
+		arg.Review,
+		arg.Success,
+		arg.ReviewedBy,
+	)
+	return err
+}
+
+const setStepReview = `-- name: SetStepReview :exec
+UPDATE attendance_steps SET review = $2, success = $3 WHERE id = $1
+`
+
+type SetStepReviewParams struct {
+	ID      uuid.UUID `json:"id"`
+	Review  string    `json:"review"`
+	Success bool      `json:"success"`
+}
+
+func (q *Queries) SetStepReview(ctx context.Context, arg SetStepReviewParams) error {
+	_, err := q.db.Exec(ctx, setStepReview, arg.ID, arg.Review, arg.Success)
 	return err
 }
 

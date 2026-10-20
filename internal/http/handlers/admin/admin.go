@@ -93,6 +93,7 @@ func (h *Handler) Register(g fiber.Router) {
 	g.Get("/reports/attendance.xlsx", need("reports:view"), h.reportXLSX)
 	g.Get("/students/:id/attempts", need("attempts:view"), h.studentAttempts)
 	g.Get("/attempts", need("attempts:view"), h.listAttempts)
+	g.Put("/attempts/:id/review", adminOnly, h.reviewAttempt)
 	g.Delete("/attempts/:id", adminOnly, h.deleteAttempt)
 
 	g.Get("/audit", need("audit:view"), h.listAudit)
@@ -632,7 +633,7 @@ func (h *Handler) studentAttempts(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	out, err := h.s.Reports.StudentAttempts(c.Context(), id, c.Query("from"), c.Query("to"))
+	out, err := h.s.Reports.StudentAttempts(c.Context(), nil, id, c.Query("from"), c.Query("to"))
 	if err != nil {
 		return err
 	}
@@ -712,6 +713,24 @@ func (h *Handler) deleteAttempt(c *fiber.Ctx) error {
 		return err
 	}
 	if err := h.s.Attempts.Delete(c.Context(), httputil.Actor(c), id); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// reviewAttempt confirms or rejects an attempt accepted without a face check: {"approved": bool}.
+func (h *Handler) reviewAttempt(c *fiber.Ctx) error {
+	id, err := httputil.IDParam(c, "id")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Approved bool `json:"approved"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return apperr.Validation("Ma'lumotlar noto'g'ri", nil)
+	}
+	if err := h.s.Attempts.Review(c.Context(), httputil.Actor(c), nil, id, body.Approved); err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusNoContent)

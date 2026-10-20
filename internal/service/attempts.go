@@ -53,7 +53,15 @@ var (
 	errShiftLocked  = apperr.New(http.StatusConflict, "shift_locked", "Bugun boshqa smenada qatnashgansiz, smenani almashtirib bo'lmaydi")
 	errStepDone     = apperr.New(http.StatusConflict, "step_done", "Bu bosqich allaqachon tasdiqlangan")
 	errExhausted    = apperr.New(http.StatusConflict, "attempts_exhausted", "Bu bosqich uchun urinishlar tugadi")
+	errRejected     = apperr.New(http.StatusConflict, "step_rejected", "Bu bosqich o'qituvchi tomonidan tasdiqlanmagan, qayta topshirib bo'lmaydi")
 	errFaceDown     = apperr.New(http.StatusServiceUnavailable, "face_unavailable", face.UnavailableMessage)
+)
+
+// Review states of an attempt / step (see migration 00005).
+const (
+	ReviewPending  = "pending"
+	ReviewApproved = "approved"
+	ReviewRejected = "rejected"
 )
 
 type AttemptService struct {
@@ -70,15 +78,15 @@ type AttemptService struct {
 
 func NewAttemptService(pool *pgxpool.Pool, store storage.Storage, f face.Service, loc *time.Location, maxAttempts int, gpsMaxAccuracyM float64) *AttemptService {
 	if maxAttempts <= 0 {
-		maxAttempts = 5
+		maxAttempts = 10
 	}
 	if gpsMaxAccuracyM <= 0 {
 		gpsMaxAccuracyM = 100
 	}
-	return &AttemptService{pool: pool, store: store, face: f, loc: loc, clock: time.Now, maxAttempts: maxAttempts, gpsMaxAcc: gpsMaxAccuracyM, mismatchLimit: 3}
+	return &AttemptService{pool: pool, store: store, face: f, loc: loc, clock: time.Now, maxAttempts: maxAttempts, gpsMaxAcc: gpsMaxAccuracyM, mismatchLimit: 5}
 }
 
-// WithMismatchLimit sets how many face mismatches in one attendance block the student (<=0 keeps 3).
+// WithMismatchLimit sets how many face mismatches in one attendance block the student (<=0 keeps 5).
 func (s *AttemptService) WithMismatchLimit(n int) *AttemptService {
 	if n > 0 {
 		s.mismatchLimit = n
@@ -207,6 +215,9 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 			return nil, errShiftLocked
 		}
 		if st, err := q.GetStep(ctx, db.GetStepParams{AttendanceID: att.ID, Step: int16(win.Step)}); err == nil {
+			if st.Review == ReviewRejected {
+				return nil, errRejected
+			}
 			if st.Success {
 				return nil, errStepDone
 			}
@@ -230,32 +241,46 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 	}
 	locationOK := geoRes.OK && accuracyOK
 
-	// 5b. face + liveness (before the transaction: it can take seconds)
+	// 5b. face + liveness (before the transaction: it can take seconds).
+	// When the face-service is busy or unreachable the face check is skipped and an attempt whose
+	// location is fine is accepted for manual review (teacher/admin confirm it later).
 	var faceOK, liveOK bool
 	var dist, thr, spoof *float64
-	vr, ferr := s.face.Verify(ctx, in.Image, u.FaceEmbedding)
-	switch {
-	case ferr == nil:
-		liveOK = vr.IsReal
-		faceOK = vr.IsReal && vr.Verified
-		dist, thr, spoof = vr.Distance, &vr.Threshold, vr.AntispoofScore
-		if !vr.IsReal {
-			failures = append(failures, FailLiveness)
-		} else if !vr.Verified {
-			failures = append(failures, FailFace)
+	deferFace := false
+	if busy, berr := s.face.Busy(ctx); berr != nil || busy {
+		deferFace = true
+	} else {
+		vr, ferr := s.face.Verify(ctx, in.Image, u.FaceEmbedding)
+		switch {
+		case ferr == nil:
+			liveOK = vr.IsReal
+			faceOK = vr.IsReal && vr.Verified
+			dist, thr, spoof = vr.Distance, &vr.Threshold, vr.AntispoofScore
+			if !vr.IsReal {
+				failures = append(failures, FailLiveness)
+			} else if !vr.Verified {
+				failures = append(failures, FailFace)
+			}
+		case errors.Is(ferr, face.ErrNoFace):
+			failures = append(failures, FailNoFace)
+		case errors.Is(ferr, face.ErrMultipleFaces):
+			failures = append(failures, FailMultipleFaces)
+		case errors.Is(ferr, face.ErrInvalidImage):
+			return nil, apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"image": "Rasmni o'qib bo'lmadi"})
+		case errors.Is(ferr, face.ErrUnavailable):
+			if !locationOK {
+				return nil, errFaceDown // not the student's fault: no attempt is consumed
+			}
+			deferFace = true
+		default:
+			return nil, ferr
 		}
-	case errors.Is(ferr, face.ErrNoFace):
-		failures = append(failures, FailNoFace)
-	case errors.Is(ferr, face.ErrMultipleFaces):
-		failures = append(failures, FailMultipleFaces)
-	case errors.Is(ferr, face.ErrInvalidImage):
-		return nil, apperr.Validation("Ma'lumotlar noto'g'ri", map[string]string{"image": "Rasmni o'qib bo'lmadi"})
-	case errors.Is(ferr, face.ErrUnavailable):
-		return nil, errFaceDown // not the student's fault: no attempt is consumed
-	default:
-		return nil, ferr
 	}
+	review := ""
 	success := faceOK && liveOK && locationOK
+	if deferFace && locationOK {
+		success, review = true, ReviewPending
+	}
 	if failures == nil {
 		failures = []string{}
 	}
@@ -287,6 +312,9 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 		if err != nil {
 			return err
 		}
+		if st.Review == ReviewRejected {
+			return errRejected
+		}
 		if st.Success {
 			return errStepDone
 		}
@@ -302,7 +330,7 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 			StepID: st.ID, Image: path, UserAgent: actor.UserAgent, Latitude: in.Latitude, Longitude: in.Longitude,
 			GpsAccuracy: in.Accuracy, LocationID: uuidNull(location.ID), FaceVerified: faceOK, LocationVerified: locationOK,
 			LivenessVerified: liveOK, Success: success, Error: failureSummary(failures),
-			FaceDistance: float8(dist), FaceThreshold: float8(thr), AntispoofScore: float8(spoof),
+			FaceDistance: float8(dist), FaceThreshold: float8(thr), AntispoofScore: float8(spoof), Review: review,
 		}
 		if addr, perr := netip.ParseAddr(actor.IP); perr == nil {
 			p.IpAddress = &addr
@@ -311,7 +339,12 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 		if err != nil {
 			return err
 		}
-		if success {
+		switch {
+		case review == ReviewPending:
+			if err := q.MarkStepPending(ctx, st.ID); err != nil {
+				return err
+			}
+		case success:
 			if err := q.MarkStepSuccess(ctx, st.ID); err != nil {
 				return err
 			}
@@ -332,7 +365,7 @@ func (s *AttemptService) Attempt(ctx context.Context, actor Actor, u db.User, in
 		}
 		if err := audit.Write(ctx, tx, actor.entry(audit.ActionAttendanceAttempt, "attendance_attempt", &attempt.ID, nil, map[string]any{
 			"attendance_id": att.ID, "shift": win.Shift, "step": win.Step, "success": success, "face_verified": faceOK,
-			"location_verified": locationOK, "liveness_verified": liveOK, "failures": failures,
+			"location_verified": locationOK, "liveness_verified": liveOK, "failures": failures, "review": review,
 		})); err != nil {
 			return err
 		}

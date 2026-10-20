@@ -141,7 +141,7 @@ func (q *Queries) GetTodayAttendance(ctx context.Context, arg GetTodayAttendance
 }
 
 const listStepsWithAttemptCounts = `-- name: ListStepsWithAttemptCounts :many
-SELECT st.step::int AS step, st.success,
+SELECT st.step::int AS step, st.success, st.review,
        (SELECT count(*) FROM attendance_attempts t WHERE t.step_id = st.id)::int AS attempts
 FROM attendance_steps st
 WHERE st.attendance_id = $1
@@ -149,9 +149,10 @@ ORDER BY st.step
 `
 
 type ListStepsWithAttemptCountsRow struct {
-	Step     int32 `json:"step"`
-	Success  bool  `json:"success"`
-	Attempts int32 `json:"attempts"`
+	Step     int32  `json:"step"`
+	Success  bool   `json:"success"`
+	Review   string `json:"review"`
+	Attempts int32  `json:"attempts"`
 }
 
 func (q *Queries) ListStepsWithAttemptCounts(ctx context.Context, attendanceID uuid.UUID) ([]ListStepsWithAttemptCountsRow, error) {
@@ -163,7 +164,12 @@ func (q *Queries) ListStepsWithAttemptCounts(ctx context.Context, attendanceID u
 	var items []ListStepsWithAttemptCountsRow
 	for rows.Next() {
 		var i ListStepsWithAttemptCountsRow
-		if err := rows.Scan(&i.Step, &i.Success, &i.Attempts); err != nil {
+		if err := rows.Scan(
+			&i.Step,
+			&i.Success,
+			&i.Review,
+			&i.Attempts,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -121,9 +121,9 @@ describe('FaceCapture', () => {
     expect(await text(w)).toContain('markaziga')
     expect(w.find('[data-testid="progress-ring"]').exists()).toBe(false)
     result = good()
-    run(2000) // 2s of the new streak is not enough
+    run(2000) // the reason stays ~1.2 s, then 3 s must be held again: 2 s is not enough
     expect(w.emitted('capture')).toBeUndefined()
-    run(1500)
+    run(2500)
     await flushPromises()
     expect(w.emitted('capture')).toHaveLength(1)
   })

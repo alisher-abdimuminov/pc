@@ -4,7 +4,7 @@ WHERE student_id = sqlc.arg('student_id')::uuid AND date = sqlc.arg('on_date')::
 ORDER BY created_at DESC LIMIT 1;
 
 -- name: ListStepsWithAttemptCounts :many
-SELECT st.step::int AS step, st.success,
+SELECT st.step::int AS step, st.success, st.review,
        (SELECT count(*) FROM attendance_attempts t WHERE t.step_id = st.id)::int AS attempts
 FROM attendance_steps st
 WHERE st.attendance_id = $1

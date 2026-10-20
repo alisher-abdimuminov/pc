@@ -24,7 +24,7 @@ describe('attempt details marks', () => {
   it('shows face, location and liveness as check / x icons, readable by screen readers', async () => {
     const w = await (async () => {
       const m = mount(AttemptsView, {
-        props: { url: '/api/x', cacheKey: 't' },
+        props: { url: '/api/x', cacheKey: 't', as: 'admin' },
         global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) }]] },
       })
       await flushPromises()

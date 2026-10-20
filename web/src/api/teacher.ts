@@ -21,6 +21,8 @@ export interface GroupStudentToday {
   status: '' | 'full' | 'partial' | 'absent'
   shift: number
   steps: number
+  /** steps waiting for a manual review */
+  pending: number
 }
 export interface TeacherGroupDetail extends TeacherGroup {
   students: GroupStudentToday[]
@@ -63,6 +65,8 @@ const qs = (q: ListQuery = {}) => {
 const base = '/api/teacher'
 
 export const teacher = {
+  reviewAttempt: (id: string, approved: boolean) =>
+    api<void>(`${base}/attempts/${id}/review`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved }) }),
   groups: () => api<{ items: TeacherGroup[] }>(`${base}/groups`).then((r) => r.items),
   group: (id: string) => api<TeacherGroupDetail>(`${base}/groups/${id}`),
   assignments: (q?: ListQuery) => api<Page<Assignment>>(`${base}/assignments${qs(q)}`),

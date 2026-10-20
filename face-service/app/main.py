@@ -50,8 +50,12 @@ async def lifespan(app: FastAPI):
     """Load the model exactly once, before the first request is served."""
     engine = getattr(app.state, "engine", None) or make_engine()
     app.state.engine = engine
-    app.state.semaphore = asyncio.Semaphore(
-        max(1, int(os.getenv("FACE_CONCURRENCY", "2")))
+    concurrency = max(1, int(os.getenv("FACE_CONCURRENCY", "2")))
+    app.state.semaphore = asyncio.Semaphore(concurrency)
+    # requests running or waiting for a slot; /health reports "busy" once this reaches the limit
+    app.state.inflight = 0
+    app.state.busy_limit = max(
+        1, int(os.getenv("FACE_BUSY_THRESHOLD", str(concurrency * 2)))
     )
     await run_in_threadpool(engine.load)
     log.info(
@@ -85,12 +89,30 @@ async def http_error_handler(_: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content=detail)
 
 
+@asynccontextmanager
+async def inference_slot(app: FastAPI):
+    """Holds a concurrency slot and counts the request as in flight while it waits and runs."""
+    app.state.inflight += 1
+    try:
+        async with app.state.semaphore:
+            yield
+    finally:
+        app.state.inflight -= 1
+
+
 @app.get("/health")
-def health(request: Request):
+async def health(request: Request):
     engine: Engine = request.app.state.engine
     if not engine.loaded:
         raise HTTPException(status_code=503, detail={"code": "loading"})
-    return {"status": "ok", "model": engine.model_name, "detector": engine.detector}
+    state = request.app.state
+    return {
+        "status": "ok",
+        "model": engine.model_name,
+        "detector": engine.detector,
+        "busy": state.inflight >= state.busy_limit,
+        "inflight": state.inflight,
+    }
 
 
 async def read_image(image: UploadFile) -> bytes:
@@ -106,7 +128,7 @@ async def embed(
 ):
     data = await read_image(image)
     engine: Engine = request.app.state.engine
-    async with request.app.state.semaphore:
+    async with inference_slot(request.app):
         res = await run_in_threadpool(engine.embed, data, anti_spoofing)
     body = {
         "embedding": res.embedding,
@@ -130,7 +152,7 @@ async def verify(
         raise InvalidEmbedding("embedding must be a non-empty array of finite numbers")
     data = await read_image(image)
     engine: Engine = request.app.state.engine
-    async with request.app.state.semaphore:
+    async with inference_slot(request.app):
         res = await run_in_threadpool(engine.verify, data, stored)
     return {
         "face_found": res.face_found,

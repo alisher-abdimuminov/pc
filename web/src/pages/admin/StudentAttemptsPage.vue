@@ -10,6 +10,6 @@ const sid = useRoute().params.id as string
 <template>
   <div class="space-y-4">
     <BackLink to="/admin/reports">{{ uz.report.title }}</BackLink>
-    <AttemptsView :url="`/api/admin/students/${sid}/attempts`" :cache-key="`admin-${sid}`" />
+    <AttemptsView as="admin" :url="`/api/admin/students/${sid}/attempts`" :cache-key="`admin-${sid}`" />
   </div>
 </template>

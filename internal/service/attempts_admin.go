@@ -36,7 +36,7 @@ type AttemptFilter struct {
 	GroupID   *uuid.UUID
 	StudentID *uuid.UUID
 	Success   *bool
-	// Kind narrows to one failure type: location | face | liveness | no_face.
+	// Kind narrows to one failure type (location | face | liveness | no_face) or to pending (awaiting review).
 	Kind     string
 	From, To string // YYYY-MM-DD inclusive, business timezone
 }
@@ -66,9 +66,10 @@ type AdminAttemptDTO struct {
 	Longitude        float64    `json:"longitude"`
 	IP               string     `json:"ip"`
 	HasSelfie        bool       `json:"has_selfie"`
+	Review           string     `json:"review"` // "" | pending | approved | rejected
 }
 
-var validKinds = map[string]bool{"": true, "location": true, "face": true, "liveness": true, "no_face": true}
+var validKinds = map[string]bool{"": true, "location": true, "face": true, "liveness": true, "no_face": true, "pending": true}
 
 func (s *AttemptsAdminService) bound(v string, plusDays int, field string) (pgtype.Timestamptz, error) {
 	if v == "" {
@@ -122,7 +123,7 @@ func (s *AttemptsAdminService) List(ctx context.Context, p ListParams, f Attempt
 			FaceVerified: r.FaceVerified, LocationVerified: r.LocationVerified, LivenessVerified: r.LivenessVerified,
 			Success: r.Success, Error: r.Error, FaceDistance: floatPtr(r.FaceDistance), FaceThreshold: floatPtr(r.FaceThreshold),
 			AntispoofScore: floatPtr(r.AntispoofScore), GPSAccuracy: r.GpsAccuracy, Latitude: r.Latitude, Longitude: r.Longitude,
-			HasSelfie: r.Image != "",
+			HasSelfie: r.Image != "", Review: r.Review,
 		}
 		if r.IpAddress != nil {
 			d.IP = r.IpAddress.String()
@@ -159,4 +160,43 @@ func (s *AttemptsAdminService) Delete(ctx context.Context, actor Actor, id uuid.
 		_ = s.store.Delete(ctx, image)
 	}
 	return nil
+}
+
+// Review confirms (approved) or rejects an attempt that was accepted without a face check because the
+// face-service was busy. teacherID restricts it to attempts of that teacher's students (nil = admin).
+// A rejected step is final: the student cannot retry it.
+func (s *AttemptsAdminService) Review(ctx context.Context, actor Actor, teacherID *uuid.UUID, id uuid.UUID, approved bool) error {
+	err := InTx(ctx, s.pool, func(tx pgx.Tx, q *db.Queries) error {
+		a, err := q.GetAttemptForReview(ctx, id)
+		if err != nil {
+			return notFoundOr(err)
+		}
+		if teacherID != nil && !(a.TeacherID.Valid && a.TeacherID.UUID == *teacherID) {
+			return apperr.NotFound()
+		}
+		if a.Review == "" {
+			return apperr.New(409, "not_reviewable", "Bu urinish qo'lda tekshirishni talab qilmaydi")
+		}
+		review := ReviewRejected
+		if approved {
+			review = ReviewApproved
+		}
+		if a.Review == review {
+			return nil
+		}
+		reviewer := uuid.NullUUID{}
+		if actor.ID != nil {
+			reviewer = uuid.NullUUID{UUID: *actor.ID, Valid: true}
+		}
+		if err := q.ReviewAttempt(ctx, db.ReviewAttemptParams{ID: id, Review: review, Success: approved, ReviewedBy: reviewer}); err != nil {
+			return err
+		}
+		if err := q.SetStepReview(ctx, db.SetStepReviewParams{ID: a.StepID, Review: review, Success: approved}); err != nil {
+			return err
+		}
+		return audit.Write(ctx, tx, actor.entry(audit.ActionUpdate, "attendance_attempt", &id,
+			map[string]any{"review": a.Review, "student_id": a.StudentID, "date": dateStr(a.Date), "step": a.Step},
+			map[string]any{"review": review}))
+	})
+	return mapDBError(err)
 }
